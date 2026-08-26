@@ -99,7 +99,7 @@ public class QQAccessibilityService extends AccessibilityService {
             }
             return;
         }
-        if (type == 16) {
+        if (type == 16 || type == 2048) {
             // 关键修复：不再"只要屏幕内容变化就重新扫一遍找输入框"，
             // 而是先看这次变化事件本身是从哪个控件发出的（e.getSource()）。
             // 只有当变化确实发生在一个"当前已聚焦的可编辑控件"上时才继续处理，
@@ -109,16 +109,24 @@ public class QQAccessibilityService extends AccessibilityService {
             if (src == null) {
                 return;
             }
-            // 关键修复2：仅"已获得焦点"还不够——抖音这类App会在页面刚打开、
-            // 用户还没点击输入框之前就已经把输入焦点放在输入框上，此时显示的是
-            // 灰色占位提示文字（比如"发消息或按住说话"），并非用户真实输入。
-            // isShowingHintText() 是Android无障碍框架专门用来标记"当前显示的是
-            // 提示文字而非真实内容"的接口，比焦点判断更准确，必须一起用上。
-            if (!src.isEditable() || !src.isFocused() || src.isShowingHintText()) {
-                src.recycle();
-                return;
+            boolean srcOk = src.isEditable() && src.isFocused() && !src.isShowingHintText();
+            if (!srcOk && type == 2048) {
+                // type=2048(界面内容变化)的事件源经常是一个容器节点，不是输入框本身，
+                // 这种情况下退回到"在当前窗口里找已聚焦且非占位文字的可编辑控件"。
+                AccessibilityNodeInfo rootForCheck = getRootInActiveWindow();
+                if (rootForCheck != null) {
+                    AccessibilityNodeInfo focusedNode = findFocusedEditable(rootForCheck);
+                    if (focusedNode != null) {
+                        srcOk = !focusedNode.isShowingHintText();
+                        focusedNode.recycle();
+                    }
+                    rootForCheck.recycle();
+                }
             }
             src.recycle();
+            if (!srcOk) {
+                return;
+            }
 
             String mode = cfg.processingMode != null ? cfg.processingMode : CatConfig.MODE_PUNCTUATION;
             if (CatConfig.MODE_REALTIME.equals(mode)) {
@@ -303,13 +311,24 @@ public class QQAccessibilityService extends AccessibilityService {
         if (emotes.length == 0) {
             emotes = CatConfig.BUILTIN_EMOTICONS;
         }
-        Arrays.sort(emotes, new Comparator() {
+        // 关键修复：之前只剥离"随机颜文字"，漏了"断句追加"功能加的文字（比如"喵"）。
+        // 断句追加是每句话后面都会加一次，读回显文字时如果不把它也当成需要
+        // 剥离的内容，就会把这个"喵"字误当成用户新打的字，再叠加一层"喵"，
+        // 无限循环雪崩式增长（z→z喵→z喵喵→z喵喵喵……）。
+        String[] toStrip = emotes;
+        if (cfg.enableAppend && cfg.appendText != null && !cfg.appendText.isEmpty()) {
+            String[] combined = new String[emotes.length + 1];
+            System.arraycopy(emotes, 0, combined, 0, emotes.length);
+            combined[emotes.length] = cfg.appendText;
+            toStrip = combined;
+        }
+        Arrays.sort(toStrip, new Comparator() {
             @Override
             public int compare(Object obj, Object obj2) {
                 return QQAccessibilityService.lambda$stripAll$0((String) obj, (String) obj2);
             }
         });
-        for (String em : emotes) {
+        for (String em : toStrip) {
             if (em == null || em.isEmpty()) {
                 continue;
             }
@@ -433,7 +452,11 @@ public class QQAccessibilityService extends AccessibilityService {
     public void onServiceConnected() {
         super.onServiceConnected();
         AccessibilityServiceInfo i = new AccessibilityServiceInfo();
-        i.eventTypes = 49;
+        // 关键修复：原来只监听32(窗口切换)+16(文字变化)+1(点击)。
+        // 微信的输入框可能不会上报"文字变化"这个精确通知，而是只上报更宽泛的
+        // "界面内容变化"(2048)。原来漏了这个类型，导致微信打字全程没有任何
+        // 事件传到服务里，看起来就像"完全没反应"。现在把2048也加进来。
+        i.eventTypes = 32 | 16 | 1 | 2048;
         i.feedbackType = 16;
         i.flags = 81;
         i.notificationTimeout = 50L;
