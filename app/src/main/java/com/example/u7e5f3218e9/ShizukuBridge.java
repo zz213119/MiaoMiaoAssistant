@@ -4,9 +4,11 @@ import android.content.pm.PackageManager;
 
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
+import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 
 import rikka.shizuku.Shizuku;
+import rikka.shizuku.ShizukuRemoteProcess;
 
 /**
  * Experimental Shizuku bridge. This is intentionally isolated from the existing
@@ -43,14 +45,22 @@ public final class ShizukuBridge {
         }
     }
 
-    /** Run a shell command through Shizuku and return stdout/stderr. */
+    /**
+     * Run a shell command through the deprecated Shizuku.newProcess API.
+     * Shizuku 13.1.x keeps the method but makes it private while transitioning
+     * callers to UserService. Reflection is used here only for this experiment.
+     */
     public static String runShell(String... command) {
         if (!hasPermission()) {
             return "SHIZUKU_PERMISSION_NOT_GRANTED";
         }
-        Process process = null;
+        ShizukuRemoteProcess process = null;
         try {
-            process = Shizuku.newProcess(command, null, null);
+            Method method = Shizuku.class.getDeclaredMethod(
+                    "newProcess", String[].class, String[].class, String.class);
+            method.setAccessible(true);
+            process = (ShizukuRemoteProcess) method.invoke(null, command, null, null);
+
             ByteArrayOutputStream out = new ByteArrayOutputStream();
             copy(process.getInputStream(), out);
             copy(process.getErrorStream(), out);
