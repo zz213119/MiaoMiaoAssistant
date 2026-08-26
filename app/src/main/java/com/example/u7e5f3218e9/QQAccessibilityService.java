@@ -24,6 +24,14 @@ public class QQAccessibilityService extends AccessibilityService {
     @Override
     public void onAccessibilityEvent(AccessibilityEvent e) {
         String pkg = e.getPackageName() != null ? e.getPackageName().toString() : "";
+        int type = e.getEventType();
+        // 关键修复：窗口切换事件一律先刷新配置，再判断是否目标应用。
+        // 旧逻辑是"先判断是否目标应用，再刷新配置"，如果用户刚在设置里开启了
+        // 全局模式/新增了某个App，但缓存的还是旧配置，会被旧配置判定为"不是目标应用"
+        // 而直接return，永远走不到刷新配置那一步，导致设置要等系统重启服务才生效。
+        if (type == 32) {
+            this.cachedConfig = CatConfig.load(this);
+        }
         CatConfig cfg = this.cachedConfig;
         if (cfg == null) {
             cfg = CatConfig.load(this);
@@ -40,13 +48,11 @@ public class QQAccessibilityService extends AccessibilityService {
             this.lastSet = "";
             this.lastWriteTime = 0L;
         }
-        int type = e.getEventType();
         if (type == 32) {
             this.processing = false;
             this.userOriginal = "";
             this.lastSet = "";
             this.lastWriteTime = 0L;
-            this.cachedConfig = CatConfig.load(this);
             return;
         }
         if (type == 1) {
@@ -283,7 +289,40 @@ public class QQAccessibilityService extends AccessibilityService {
         return null;
     }
 
+    /**
+     * 查找输入框：优先匹配"当前已获得输入焦点"的可编辑控件，避免误抓抖音/快手
+     * 评论区底部那种"发消息"假占位按钮（那种控件通常是可编辑但并未真正获得焦点，
+     * 点击后才会弹出真正的输入框）。找不到已聚焦的才退回旧逻辑（任意可编辑控件兜底）。
+     */
     private AccessibilityNodeInfo findEditable(AccessibilityNodeInfo n) {
+        AccessibilityNodeInfo focused = findFocusedEditable(n);
+        if (focused != null) {
+            return focused;
+        }
+        return findAnyEditable(n);
+    }
+
+    private AccessibilityNodeInfo findFocusedEditable(AccessibilityNodeInfo n) {
+        if (n == null) {
+            return null;
+        }
+        if (n.isEditable() && n.isFocused()) {
+            return AccessibilityNodeInfo.obtain(n);
+        }
+        for (int i = 0; i < n.getChildCount(); i++) {
+            AccessibilityNodeInfo c = n.getChild(i);
+            if (c != null) {
+                AccessibilityNodeInfo r = findFocusedEditable(c);
+                c.recycle();
+                if (r != null) {
+                    return r;
+                }
+            }
+        }
+        return null;
+    }
+
+    private AccessibilityNodeInfo findAnyEditable(AccessibilityNodeInfo n) {
         if (n == null) {
             return null;
         }
@@ -293,7 +332,7 @@ public class QQAccessibilityService extends AccessibilityService {
         for (int i = 0; i < n.getChildCount(); i++) {
             AccessibilityNodeInfo c = n.getChild(i);
             if (c != null) {
-                AccessibilityNodeInfo r = findEditable(c);
+                AccessibilityNodeInfo r = findAnyEditable(c);
                 c.recycle();
                 if (r != null) {
                     return r;
