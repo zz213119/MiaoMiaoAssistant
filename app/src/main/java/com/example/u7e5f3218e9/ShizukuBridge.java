@@ -3,8 +3,12 @@ package com.example.u7e5f3218e9;
 import android.content.ComponentName;
 import android.content.ServiceConnection;
 import android.content.pm.PackageManager;
+import android.os.Handler;
 import android.os.IBinder;
+import android.os.Looper;
 import android.os.Parcel;
+
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import rikka.shizuku.Shizuku;
 
@@ -12,6 +16,7 @@ import rikka.shizuku.Shizuku;
 public final class ShizukuBridge {
     public static final int REQUEST_PERMISSION_CODE = 1001;
     private static final int TRANSACTION_DUMP_UI = 1;
+    private static final long BIND_TIMEOUT_MS = 8000L;
 
     private static final Shizuku.UserServiceArgs USER_SERVICE_ARGS =
             new Shizuku.UserServiceArgs(
@@ -55,7 +60,8 @@ public final class ShizukuBridge {
 
     /**
      * Bind the isolated UserService and ask it to perform one uiautomator dump.
-     * The callback is invoked off the main thread.
+     * The callback is invoked off the main thread. A timeout is reported so a
+     * failed bind cannot leave the UI in "检测中" forever.
      */
     public static void dumpUi(final DumpCallback callback) {
         if (callback == null) return;
@@ -63,6 +69,17 @@ public final class ShizukuBridge {
             callback.onResult("SHIZUKU_PERMISSION_NOT_GRANTED");
             return;
         }
+
+        final Handler mainHandler = new Handler(Looper.getMainLooper());
+        final AtomicBoolean finished = new AtomicBoolean(false);
+        final Runnable timeout = new Runnable() {
+            @Override
+            public void run() {
+                if (finished.compareAndSet(false, true)) {
+                    callback.onResult("USER_SERVICE_BIND_TIMEOUT after " + BIND_TIMEOUT_MS + "ms");
+                }
+            }
+        };
 
         final ServiceConnection[] holder = new ServiceConnection[1];
         holder[0] = new ServiceConnection() {
@@ -79,9 +96,13 @@ public final class ShizukuBridge {
                                 Parcel data = Parcel.obtain();
                                 Parcel reply = Parcel.obtain();
                                 try {
-                                    service.transact(TRANSACTION_DUMP_UI, data, reply, 0);
-                                    reply.readException();
-                                    result = reply.readString();
+                                    boolean handled = service.transact(TRANSACTION_DUMP_UI, data, reply, 0);
+                                    if (!handled) {
+                                        result = "USER_SERVICE_TRANSACTION_REJECTED";
+                                    } else {
+                                        reply.readException();
+                                        result = reply.readString();
+                                    }
                                 } finally {
                                     reply.recycle();
                                     data.recycle();
@@ -91,13 +112,14 @@ public final class ShizukuBridge {
                             result = "USER_SERVICE_ERROR: " + e;
                         }
 
+                        final String finalResult = result == null ? "<null>" : result;
+                        if (finished.compareAndSet(false, true)) {
+                            mainHandler.removeCallbacks(timeout);
+                            callback.onResult(finalResult);
+                        }
                         try {
-                            callback.onResult(result == null ? "<null>" : result);
-                        } finally {
-                            try {
-                                Shizuku.unbindUserService(USER_SERVICE_ARGS, holder[0], true);
-                            } catch (Throwable ignored) {
-                            }
+                            Shizuku.unbindUserService(USER_SERVICE_ARGS, holder[0], true);
+                        } catch (Throwable ignored) {
                         }
                     }
                 }, "qwq-shizuku-dump").start();
@@ -105,14 +127,20 @@ public final class ShizukuBridge {
 
             @Override
             public void onServiceDisconnected(ComponentName name) {
-                callback.onResult("USER_SERVICE_DISCONNECTED");
+                if (finished.compareAndSet(false, true)) {
+                    mainHandler.removeCallbacks(timeout);
+                    callback.onResult("USER_SERVICE_DISCONNECTED");
+                }
             }
         };
 
         try {
             Shizuku.bindUserService(USER_SERVICE_ARGS, holder[0]);
+            mainHandler.postDelayed(timeout, BIND_TIMEOUT_MS);
         } catch (Throwable e) {
-            callback.onResult("USER_SERVICE_BIND_ERROR: " + e);
+            if (finished.compareAndSet(false, true)) {
+                callback.onResult("USER_SERVICE_BIND_ERROR: " + e);
+            }
         }
     }
 }
