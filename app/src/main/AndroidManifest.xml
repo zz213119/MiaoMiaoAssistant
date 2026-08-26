@@ -2,7 +2,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-sdk
-        android:minSdkVersion="23"
+        android:minSdkVersion="24"
         android:targetSdkVersion="34" />
 
     <!-- 无障碍服务权限（系统强制要求，由 BIND_ACCESSIBILITY_SERVICE 保护） -->
