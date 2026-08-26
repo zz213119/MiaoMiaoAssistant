@@ -3,6 +3,7 @@ package com.example.u7e5f3218e9;
 import android.os.Binder;
 import android.os.IBinder;
 import android.os.Parcel;
+import android.os.RemoteException;
 import android.os.SystemClock;
 import android.util.Log;
 
@@ -54,7 +55,13 @@ public class ShizukuUiDumpUserService extends Binder {
             }
             return true;
         }
-        return super.onTransact(code, data, reply, flags);
+
+        try {
+            return super.onTransact(code, data, reply, flags);
+        } catch (RemoteException e) {
+            Log.e(TAG, "super.onTransact failed", e);
+            return false;
+        }
     }
 
     private String dumpUi() throws Exception {
