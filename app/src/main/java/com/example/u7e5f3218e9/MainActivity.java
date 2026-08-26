@@ -21,8 +21,6 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
-import java.io.BufferedReader;
-import java.io.InputStreamReader;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -37,6 +35,9 @@ public class MainActivity extends Activity {
     private CheckBox rbRealtime;
     private TextView statusText;
     private Button toggleButton;
+    private TextView shizukuStatusText;
+    private Button shizukuRequestButton;
+    private Button shizukuOpenButton;
 
     // 应用范围
     private CheckBox cbAppQQ;
@@ -110,6 +111,50 @@ public class MainActivity extends Activity {
             }
         });
         root.addView(logButton);
+
+        // Shizuku 实验区：只负责显示状态和申请授权，不影响原有无障碍功能。
+        root.addView(divider());
+        TextView shizukuTitle = new TextView(this);
+        shizukuTitle.setText("Shizuku（微信实验功能）");
+        shizukuTitle.setTextSize(18.0f);
+        shizukuTitle.setTextColor(Color.rgb(93, 64, 55));
+        shizukuTitle.setTypeface(Typeface.DEFAULT_BOLD);
+        shizukuTitle.setPadding(0, 16, 0, 8);
+        root.addView(shizukuTitle);
+
+        TextView shizukuHint = new TextView(this);
+        shizukuHint.setText("用于测试通过 Shizuku + UiAutomator 读取微信界面。仅在实验分支启用，不会替换 QQ/抖音/快手的原有处理方式。");
+        shizukuHint.setTextSize(12.0f);
+        shizukuHint.setTextColor(Color.rgb(141, 110, 99));
+        shizukuHint.setPadding(0, 0, 0, 8);
+        root.addView(shizukuHint);
+
+        this.shizukuStatusText = new TextView(this);
+        this.shizukuStatusText.setTextSize(15.0f);
+        this.shizukuStatusText.setPadding(20, 14, 20, 14);
+        this.shizukuStatusText.setBackgroundColor(-1);
+        this.shizukuStatusText.setTextColor(Color.rgb(51, 51, 51));
+        root.addView(this.shizukuStatusText);
+
+        this.shizukuRequestButton = new Button(this);
+        this.shizukuRequestButton.setText("申请 Shizuku 权限");
+        this.shizukuRequestButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                MainActivity.this.requestShizukuPermission();
+            }
+        });
+        root.addView(this.shizukuRequestButton);
+
+        this.shizukuOpenButton = new Button(this);
+        this.shizukuOpenButton.setText("打开 Shizuku");
+        this.shizukuOpenButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                MainActivity.this.openShizuku();
+            }
+        });
+        root.addView(this.shizukuOpenButton);
         root.addView(divider());
 
         TextView scopeTitle = new TextView(this);
@@ -311,6 +356,7 @@ public class MainActivity extends Activity {
 
         scrollView.addView(root);
         setContentView(scrollView);
+        updateShizukuStatus();
     }
 
     void m0lambda$onCreate$0$comexampleu7e5f3218e9MainActivity(CompoundButton buttonView, boolean isChecked) {
@@ -329,6 +375,7 @@ public class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         updateServiceStatus();
+        updateShizukuStatus();
     }
 
     private void updateServiceStatus() {
@@ -349,6 +396,55 @@ public class MainActivity extends Activity {
         this.toggleButton.setText("前往开启无障碍服务");
         this.toggleButton.setEnabled(true);
         this.toggleButton.setBackgroundColor(Color.rgb(255, 111, 0));
+    }
+
+    private void updateShizukuStatus() {
+        if (this.shizukuStatusText == null) return;
+        boolean available = ShizukuBridge.isAvailable();
+        boolean permission = ShizukuBridge.hasPermission();
+        if (!available) {
+            this.shizukuStatusText.setText("Shizuku 状态：未连接\n请先启动系统中的 Shizuku 服务");
+            this.shizukuStatusText.setTextColor(Color.rgb(198, 40, 40));
+            this.shizukuRequestButton.setEnabled(false);
+            return;
+        }
+        if (!permission) {
+            this.shizukuStatusText.setText("Shizuku 状态：已连接，但未授权本应用");
+            this.shizukuStatusText.setTextColor(Color.rgb(245, 124, 0));
+            this.shizukuRequestButton.setEnabled(true);
+            return;
+        }
+        this.shizukuStatusText.setText("Shizuku 状态：已连接并已授权 ✓\n微信实验服务可以使用 Shizuku");
+        this.shizukuStatusText.setTextColor(Color.rgb(46, 125, 50));
+        this.shizukuRequestButton.setEnabled(false);
+    }
+
+    private void requestShizukuPermission() {
+        if (!ShizukuBridge.isAvailable()) {
+            Toast.makeText(this, "Shizuku 尚未启动", Toast.LENGTH_SHORT).show();
+            updateShizukuStatus();
+            return;
+        }
+        if (ShizukuBridge.hasPermission()) {
+            Toast.makeText(this, "Shizuku 权限已经存在", Toast.LENGTH_SHORT).show();
+            updateShizukuStatus();
+            return;
+        }
+        ShizukuBridge.requestPermission();
+        Toast.makeText(this, "已发起 Shizuku 权限申请，请在 Shizuku 中允许", Toast.LENGTH_LONG).show();
+    }
+
+    private void openShizuku() {
+        try {
+            Intent launch = getPackageManager().getLaunchIntentForPackage("moe.shizuku.privileged.api");
+            if (launch != null) {
+                startActivity(launch);
+            } else {
+                Toast.makeText(this, "未找到 Shizuku，请先安装 Shizuku", Toast.LENGTH_LONG).show();
+            }
+        } catch (Exception e) {
+            Toast.makeText(this, "无法打开 Shizuku: " + e.getMessage(), Toast.LENGTH_LONG).show();
+        }
     }
 
     private boolean isAccessibilityServiceEnabled() {
