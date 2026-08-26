@@ -3,6 +3,8 @@ package com.example.u7e5f3218e9;
 import android.accessibilityservice.AccessibilityService;
 import android.accessibilityservice.AccessibilityServiceInfo;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.text.format.DateFormat;
 import android.util.Log;
 import android.view.accessibility.AccessibilityEvent;
@@ -46,7 +48,89 @@ public class QQAccessibilityService extends AccessibilityService {
     private String lastSet = "";
     private boolean processing = false;
     private long lastWriteTime = 0;
+    // 发送后的"冷静期"：发送动作触发后的这段时间里，即使收到再多事件通知
+    // 也先不处理，把节奏让给宿主App自己走完"读取文字→发送→清空输入框"的流程，
+    // 避免我们的重复写入跟它自己的发送逻辑撞在一起，把同一句话拆成好几条发出去。
+    private static final long SEND_COOLDOWN_MS = 1500L;
+    private long lastSendTime = 0;
     private String trackedPkg = "";
+    // 轮询兜底：微信这类App可能完全不上报"内容变化"这类无障碍事件通知
+    // （推测是出于防自动化考虑，QQ/抖音/快手目前实测都会正常上报，微信不会）。
+    // 既然被动等通知等不到，就换成主动定时去查——不管有没有收到事件，
+    // 每400ms自己去读一次当前输入框的文字，这样即使宿主App不推送通知，
+    // 只要它的界面结构本身还能被正常查询到，就有机会绕过去。
+    private static final long POLL_INTERVAL_MS = 400L;
+    private final Handler pollHandler = new Handler(Looper.getMainLooper());
+    private String lastPolledRaw = "";
+    private final Runnable pollRunnable = new Runnable() {
+        @Override
+        public void run() {
+            pollOnce();
+            QQAccessibilityService.this.pollHandler.postDelayed(this, POLL_INTERVAL_MS);
+        }
+    };
+
+    private void pollOnce() {
+        try {
+            long now = System.currentTimeMillis();
+            if (now - this.lastSendTime < SEND_COOLDOWN_MS) {
+                return;
+            }
+            CatConfig cfg = this.cachedConfig;
+            if (cfg == null) {
+                cfg = CatConfig.load(this);
+                this.cachedConfig = cfg;
+            }
+            AccessibilityNodeInfo root = getRootInActiveWindow();
+            if (root == null) {
+                return;
+            }
+            String pkg = root.getPackageName() != null ? root.getPackageName().toString() : "";
+            if (!cfg.isTargetPackage(pkg)) {
+                root.recycle();
+                return;
+            }
+            if (!pkg.equals(this.trackedPkg)) {
+                this.trackedPkg = pkg;
+                this.processing = false;
+                this.userOriginal = "";
+                this.lastSet = "";
+                this.lastWriteTime = 0L;
+                this.lastPolledRaw = "";
+            }
+            AccessibilityNodeInfo focused = findFocusedEditable(root);
+            if (focused == null) {
+                root.recycle();
+                return;
+            }
+            if (focused.isShowingHintText()) {
+                focused.recycle();
+                root.recycle();
+                return;
+            }
+            CharSequence cs = focused.getText();
+            focused.recycle();
+            root.recycle();
+            String raw = cs != null ? cs.toString().trim() : "";
+            if (raw.equals(this.lastPolledRaw)) {
+                return;
+            }
+            this.lastPolledRaw = raw;
+            if (raw.isEmpty()) {
+                return;
+            }
+            appendLog("[轮询] pkg=" + pkg + " 检测到输入框内容: " + raw);
+            String mode = cfg.processingMode != null ? cfg.processingMode : CatConfig.MODE_PUNCTUATION;
+            if (CatConfig.MODE_REALTIME.equals(mode)) {
+                doProcess(false);
+            } else if (isPunctuationEnding(raw)) {
+                appendLog("[轮询] 标点触发: " + raw);
+                doProcess(false);
+            }
+        } catch (Exception ex) {
+            appendLog("[轮询] 异常: " + ex.getMessage());
+        }
+    }
 
     @Override
     public void onAccessibilityEvent(AccessibilityEvent e) {
@@ -69,6 +153,11 @@ public class QQAccessibilityService extends AccessibilityService {
                     + " isTargetPackage=" + cfg.isTargetPackage(pkg));
         }
         if (!cfg.isTargetPackage(pkg)) {
+            return;
+        }
+        // 发送冷静期：刚触发过发送动作，短时间内所有事件一律忽略，
+        // 避免跟宿主App自己的"发送并清空"流程抢节奏、造成一句话拆成多条发出去。
+        if (type != 32 && System.currentTimeMillis() - this.lastSendTime < SEND_COOLDOWN_MS) {
             return;
         }
         // 切换到了不同应用（或前一次未触发窗口变化事件），重置增量追踪状态，避免跨应用串词
@@ -186,6 +275,12 @@ public class QQAccessibilityService extends AccessibilityService {
             return;
         }
         this.processing = true;
+        if (isSendClick) {
+            // 无论这次处理最终有没有真的写入新内容，只要是"点击发送"这条路径
+            // 触发进来的，就立刻记下时间点、启动冷静期——因为宿主App的原生发送
+            // 流程已经开始了，接下来这1.5秒无论收到多少事件都不再插手。
+            this.lastSendTime = System.currentTimeMillis();
+        }
         AccessibilityNodeInfo root = getRootInActiveWindow();
         if (root == null) {
             appendLog("[诊断] pkg=" + this.trackedPkg + " getRootInActiveWindow()返回null");
@@ -446,6 +541,13 @@ public class QQAccessibilityService extends AccessibilityService {
     @Override
     public void onInterrupt() {
         this.processing = false;
+        this.pollHandler.removeCallbacks(this.pollRunnable);
+    }
+
+    @Override
+    public boolean onUnbind(android.content.Intent intent) {
+        this.pollHandler.removeCallbacks(this.pollRunnable);
+        return super.onUnbind(intent);
     }
 
     @Override
@@ -464,6 +566,8 @@ public class QQAccessibilityService extends AccessibilityService {
         // CatConfig.isTargetPackage() 结合用户在设置里勾选的 应用范围/全局模式/自定义包名 判断
         i.packageNames = null;
         setServiceInfo(i);
+        this.pollHandler.removeCallbacks(this.pollRunnable);
+        this.pollHandler.postDelayed(this.pollRunnable, POLL_INTERVAL_MS);
         this.cachedConfig = CatConfig.load(this);
     }
 }
