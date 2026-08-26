@@ -2,7 +2,7 @@ name: Build APK
 
 on:
   push:
-    branches: [ main, backup-before-wechat-fix-2026-08-26 ]
+    branches: [ main ]
   workflow_dispatch:
 
 jobs:
