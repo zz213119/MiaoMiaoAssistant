@@ -22,8 +22,14 @@ public class QQAccessibilityService extends AccessibilityService {
     // 直接把日志存在进程内存里，供设置界面的"查看运行日志"按钮读取，跨机型更可靠。
     private static final int LOG_CAPACITY = 300;
     private static final ArrayDeque<String> LOG_BUFFER = new ArrayDeque<>();
+    // 调试日志总开关，跟随CatConfig.enableDebugLog同步，默认关闭以省电。
+    // 用volatile是因为轮询线程(主线程Handler)和事件回调都可能读到它。
+    private static volatile boolean debugLogEnabled = false;
 
     private static synchronized void appendLog(String msg) {
+        if (!debugLogEnabled) {
+            return;
+        }
         Log.d(TAG, msg);
         String line = DateFormat.format("HH:mm:ss", System.currentTimeMillis()) + "  " + msg;
         LOG_BUFFER.addLast(line);
@@ -41,6 +47,12 @@ public class QQAccessibilityService extends AccessibilityService {
             sb.append(line).append("\n");
         }
         return sb.toString();
+    }
+
+    private CatConfig loadConfigAndSyncLogFlag() {
+        CatConfig c = CatConfig.load(this);
+        debugLogEnabled = c.enableDebugLog;
+        return c;
     }
 
     private CatConfig cachedConfig;
@@ -70,6 +82,9 @@ public class QQAccessibilityService extends AccessibilityService {
         }
     };
 
+    private long lastPollDiagTime = 0;
+    private long lastEmptyDiagTime = 0;
+
     private void pollOnce() {
         try {
             long now = System.currentTimeMillis();
@@ -78,7 +93,7 @@ public class QQAccessibilityService extends AccessibilityService {
             }
             CatConfig cfg = this.cachedConfig;
             if (cfg == null) {
-                cfg = CatConfig.load(this);
+                cfg = loadConfigAndSyncLogFlag();
                 this.cachedConfig = cfg;
             }
             AccessibilityNodeInfo root = getRootInActiveWindow();
@@ -100,6 +115,19 @@ public class QQAccessibilityService extends AccessibilityService {
             }
             AccessibilityNodeInfo focused = findFocusedEditable(root);
             if (focused == null) {
+                // 诊断分支：区分"界面能读到、但找不到任何已聚焦的可编辑控件"这种情况。
+                // 每个App每10秒最多记一次，避免400ms轮询把日志刷爆。
+                if (now - this.lastPollDiagTime > 10000L) {
+                    this.lastPollDiagTime = now;
+                    AccessibilityNodeInfo anyEditable = findAnyEditable(root);
+                    if (anyEditable == null) {
+                        appendLog("[轮询诊断] pkg=" + pkg + " 界面窗口能读到，但树里连一个isEditable()的控件都没有");
+                    } else {
+                        appendLog("[轮询诊断] pkg=" + pkg + " 树里找到了可编辑控件(class=" + anyEditable.getClassName()
+                                + ")，但它的isFocused()不是true，所以没被当成目标输入框");
+                        anyEditable.recycle();
+                    }
+                }
                 root.recycle();
                 return;
             }
@@ -141,11 +169,11 @@ public class QQAccessibilityService extends AccessibilityService {
         // 全局模式/新增了某个App，但缓存的还是旧配置，会被旧配置判定为"不是目标应用"
         // 而直接return，永远走不到刷新配置那一步，导致设置要等系统重启服务才生效。
         if (type == 32) {
-            this.cachedConfig = CatConfig.load(this);
+            this.cachedConfig = loadConfigAndSyncLogFlag();
         }
         CatConfig cfg = this.cachedConfig;
         if (cfg == null) {
-            cfg = CatConfig.load(this);
+            cfg = loadConfigAndSyncLogFlag();
             this.cachedConfig = cfg;
         }
         if (type == 32) {
@@ -306,7 +334,13 @@ public class QQAccessibilityService extends AccessibilityService {
         }
         CharSequence cs = inp.getText();
         if (cs == null || cs.length() == 0) {
-            appendLog("[诊断] pkg=" + this.trackedPkg + " 找到输入框但当前文本为空(editable=" + inp.isEditable() + " focused=" + inp.isFocused() + " class=" + inp.getClassName() + ")");
+            // 这条诊断信息意义不大但触发很频繁（发送后输入框清空、每次点击都可能命中），
+            // 节流成每个App每5秒最多记一次，避免把有用的日志挤出缓冲区。
+            long now2 = System.currentTimeMillis();
+            if (now2 - this.lastEmptyDiagTime > 5000L) {
+                this.lastEmptyDiagTime = now2;
+                appendLog("[诊断] pkg=" + this.trackedPkg + " 找到输入框但当前文本为空(editable=" + inp.isEditable() + " focused=" + inp.isFocused() + " class=" + inp.getClassName() + ")");
+            }
             inp.recycle();
             root.recycle();
             this.processing = false;
@@ -325,7 +359,7 @@ public class QQAccessibilityService extends AccessibilityService {
         }
         CatConfig cfg = this.cachedConfig;
         if (cfg == null) {
-            cfg = CatConfig.load(this);
+            cfg = loadConfigAndSyncLogFlag();
             this.cachedConfig = cfg;
         }
         long now = System.currentTimeMillis();
@@ -568,6 +602,6 @@ public class QQAccessibilityService extends AccessibilityService {
         setServiceInfo(i);
         this.pollHandler.removeCallbacks(this.pollRunnable);
         this.pollHandler.postDelayed(this.pollRunnable, POLL_INTERVAL_MS);
-        this.cachedConfig = CatConfig.load(this);
+        this.cachedConfig = loadConfigAndSyncLogFlag();
     }
 }

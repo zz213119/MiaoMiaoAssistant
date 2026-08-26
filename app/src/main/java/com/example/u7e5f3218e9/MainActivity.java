@@ -37,6 +37,7 @@ public class MainActivity extends Activity {
     private CheckBox rbRealtime;
     private TextView statusText;
     private Button toggleButton;
+    private CheckBox cbDebugLog;
 
     // 应用范围
     private CheckBox cbAppQQ;
@@ -100,6 +101,8 @@ public class MainActivity extends Activity {
             }
         });
         root.addView(this.toggleButton);
+
+        this.cbDebugLog = addCheckbox(root, "启用调试日志", "关闭后不再记录运行日志，能省一点点电；排查问题时再打开", this.config.enableDebugLog);
 
         Button logButton = new Button(this);
         logButton.setText("查看运行日志（调试用）");
@@ -408,7 +411,8 @@ public class MainActivity extends Activity {
     private void showDebugLog() {
         String log = QQAccessibilityService.getLogSnapshot();
         if (log == null || log.trim().isEmpty()) {
-            log = "（暂无日志。请先确认无障碍服务已开启，并在目标App里打字触发一次，再回来点这个按钮看日志。\n"
+            log = "（暂无日志。请先确认设置里\"启用调试日志\"开关已打开、无障碍服务已开启，"
+                    + "并在目标App里打字触发一次，再回来点这个按钮看日志。\n"
                     + "注意：这份日志是App自己在内存里记的，重启App或服务后会清空，不依赖系统logcat，理论上不受机型限制）";
         }
         final String finalLog = log;
@@ -511,6 +515,7 @@ public class MainActivity extends Activity {
             this.config.customEmoticons = list.toArray(new String[0]);
 
             this.config.globalMode = this.cbGlobalMode.isChecked();
+            this.config.enableDebugLog = this.cbDebugLog.isChecked();
             this.config.enableQQ = this.cbAppQQ.isChecked();
             this.config.enableWeChat = this.cbAppWeChat.isChecked();
             this.config.enableDouyin = this.cbAppDouyin.isChecked();
