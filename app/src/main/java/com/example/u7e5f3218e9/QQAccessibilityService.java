@@ -64,6 +64,10 @@ public class QQAccessibilityService extends AccessibilityService {
             cfg = CatConfig.load(this);
             this.cachedConfig = cfg;
         }
+        if (type == 32) {
+            appendLog("[窗口切换] pkg=" + pkg + " 全局模式=" + cfg.globalMode + " 微信开关=" + cfg.enableWeChat
+                    + " isTargetPackage=" + cfg.isTargetPackage(pkg));
+        }
         if (!cfg.isTargetPackage(pkg)) {
             return;
         }
@@ -105,7 +109,12 @@ public class QQAccessibilityService extends AccessibilityService {
             if (src == null) {
                 return;
             }
-            if (!src.isEditable() || !src.isFocused()) {
+            // 关键修复2：仅"已获得焦点"还不够——抖音这类App会在页面刚打开、
+            // 用户还没点击输入框之前就已经把输入焦点放在输入框上，此时显示的是
+            // 灰色占位提示文字（比如"发消息或按住说话"），并非用户真实输入。
+            // isShowingHintText() 是Android无障碍框架专门用来标记"当前显示的是
+            // 提示文字而非真实内容"的接口，比焦点判断更准确，必须一起用上。
+            if (!src.isEditable() || !src.isFocused() || src.isShowingHintText()) {
                 src.recycle();
                 return;
             }
@@ -181,6 +190,13 @@ public class QQAccessibilityService extends AccessibilityService {
         }
         if (inp == null) {
             appendLog("[诊断] pkg=" + this.trackedPkg + " 未找到任何可编辑输入框节点");
+            root.recycle();
+            this.processing = false;
+            return;
+        }
+        if (inp.isShowingHintText()) {
+            appendLog("[诊断] pkg=" + this.trackedPkg + " 当前是占位提示文字，非真实输入，跳过");
+            inp.recycle();
             root.recycle();
             this.processing = false;
             return;
