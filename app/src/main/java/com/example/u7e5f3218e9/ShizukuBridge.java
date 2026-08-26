@@ -64,7 +64,8 @@ public final class ShizukuBridge {
             return;
         }
 
-        final ServiceConnection connection = new ServiceConnection() {
+        final ServiceConnection[] holder = new ServiceConnection[1];
+        holder[0] = new ServiceConnection() {
             @Override
             public void onServiceConnected(ComponentName name, final IBinder service) {
                 new Thread(new Runnable() {
@@ -94,7 +95,7 @@ public final class ShizukuBridge {
                             callback.onResult(result == null ? "<null>" : result);
                         } finally {
                             try {
-                                Shizuku.unbindUserService(USER_SERVICE_ARGS, connection, true);
+                                Shizuku.unbindUserService(USER_SERVICE_ARGS, holder[0], true);
                             } catch (Throwable ignored) {
                             }
                         }
@@ -109,7 +110,7 @@ public final class ShizukuBridge {
         };
 
         try {
-            Shizuku.bindUserService(USER_SERVICE_ARGS, connection);
+            Shizuku.bindUserService(USER_SERVICE_ARGS, holder[0]);
         } catch (Throwable e) {
             callback.onResult("USER_SERVICE_BIND_ERROR: " + e);
         }
