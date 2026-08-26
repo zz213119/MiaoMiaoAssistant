@@ -28,5 +28,8 @@ android {
 }
 
 dependencies {
-    // 该工程仅使用原生 Android 框架 API，无第三方依赖
+    // Experimental Shizuku backend; existing accessibility code remains independent.
+    def shizuku_version = "13.1.5"
+    implementation "dev.rikka.shizuku:api:$shizuku_version"
+    implementation "dev.rikka.shizuku:provider:$shizuku_version"
 }
