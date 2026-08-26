@@ -3,6 +3,8 @@ package com.example.u7e5f3218e9;
 import android.accessibilityservice.AccessibilityServiceInfo;
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.content.ClipData;
+import android.content.ClipboardManager;
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.graphics.Color;
@@ -19,6 +21,8 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -96,6 +100,16 @@ public class MainActivity extends Activity {
             }
         });
         root.addView(this.toggleButton);
+
+        Button logButton = new Button(this);
+        logButton.setText("查看运行日志（调试用）");
+        logButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                MainActivity.this.showDebugLog();
+            }
+        });
+        root.addView(logButton);
         root.addView(divider());
 
         TextView scopeTitle = new TextView(this);
@@ -389,6 +403,49 @@ public class MainActivity extends Activity {
         row.addView(textCol, new LinearLayout.LayoutParams(0, -2, 1.0f));
         linearLayout.addView(row);
         return cb;
+    }
+
+    private void showDebugLog() {
+        String log;
+        try {
+            Process process = Runtime.getRuntime().exec(new String[]{"logcat", "-d", "-t", "300", "-s", "QQCatSvc:*"});
+            BufferedReader br = new BufferedReader(new InputStreamReader(process.getInputStream()));
+            StringBuilder sb = new StringBuilder();
+            String line;
+            while ((line = br.readLine()) != null) {
+                sb.append(line).append("\n");
+            }
+            br.close();
+            log = sb.toString();
+            if (log.trim().isEmpty()) {
+                log = "（暂无日志。请先确认无障碍服务已开启，并在目标App里打字触发一次，再回来点这个按钮看日志）";
+            }
+        } catch (Exception e) {
+            log = "读取日志失败: " + e.getMessage() + "\n\n（部分厂商定制系统可能限制App读取自身日志，如果一直是这个报错，请改用Termux里执行:\nlogcat -d -s QQCatSvc:*\n来查看）";
+        }
+        final String finalLog = log;
+
+        ScrollView sv = new ScrollView(this);
+        TextView tv = new TextView(this);
+        tv.setText(finalLog);
+        tv.setTextIsSelectable(true);
+        tv.setPadding(24, 24, 24, 24);
+        tv.setTextSize(11.0f);
+        sv.addView(tv);
+
+        new AlertDialog.Builder(this)
+                .setTitle("运行日志（最近300行，倒序为最新）")
+                .setView(sv)
+                .setPositiveButton("复制全部", new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface dialog, int which) {
+                        ClipboardManager cm = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+                        cm.setPrimaryClip(ClipData.newPlainText("qqmiao_log", finalLog));
+                        Toast.makeText(MainActivity.this, "已复制到剪贴板", Toast.LENGTH_SHORT).show();
+                    }
+                })
+                .setNegativeButton("关闭", null)
+                .show();
     }
 
     private void setAppScopeRowEnabled(boolean enabled) {

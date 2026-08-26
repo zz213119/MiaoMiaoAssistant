@@ -129,6 +129,7 @@ public class QQAccessibilityService extends AccessibilityService {
         this.processing = true;
         AccessibilityNodeInfo root = getRootInActiveWindow();
         if (root == null) {
+            Log.d(TAG, "[诊断] pkg=" + this.trackedPkg + " getRootInActiveWindow()返回null");
             this.processing = false;
             return;
         }
@@ -137,12 +138,14 @@ public class QQAccessibilityService extends AccessibilityService {
             inp = findEditable(root);
         }
         if (inp == null) {
+            Log.d(TAG, "[诊断] pkg=" + this.trackedPkg + " 未找到任何可编辑输入框节点");
             root.recycle();
             this.processing = false;
             return;
         }
         CharSequence cs = inp.getText();
         if (cs == null || cs.length() == 0) {
+            Log.d(TAG, "[诊断] pkg=" + this.trackedPkg + " 找到输入框但当前文本为空(editable=" + inp.isEditable() + " focused=" + inp.isFocused() + " class=" + inp.getClassName() + ")");
             inp.recycle();
             root.recycle();
             this.processing = false;
@@ -206,6 +209,7 @@ public class QQAccessibilityService extends AccessibilityService {
         if (!target.equals(raw)) {
             Log.d(TAG, "写入: raw=" + raw + "  userOriginal=" + this.userOriginal + "  target=" + target);
             boolean ok = setText(inp, target);
+            Log.d(TAG, "[诊断] pkg=" + this.trackedPkg + " 写入调用返回=" + ok + "（如果这里是true但App里没变化，说明是该App拦截了无障碍写入）");
             if (ok) {
                 this.lastSet = target;
                 this.lastWriteTime = System.currentTimeMillis();
