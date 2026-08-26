@@ -3,9 +3,11 @@ package com.example.u7e5f3218e9;
 import android.accessibilityservice.AccessibilityService;
 import android.accessibilityservice.AccessibilityServiceInfo;
 import android.os.Bundle;
+import android.text.format.DateFormat;
 import android.util.Log;
 import android.view.accessibility.AccessibilityEvent;
 import android.view.accessibility.AccessibilityNodeInfo;
+import java.util.ArrayDeque;
 import java.util.Arrays;
 import java.util.Comparator;
 
@@ -14,6 +16,31 @@ public class QQAccessibilityService extends AccessibilityService {
     private static final String ID_INPUT = "com.tencent.mobileqq:id/input";
     private static final String ID_SEND = "com.tencent.mobileqq:id/send_btn";
     private static final String TAG = "QQCatSvc";
+    // 内存日志缓冲区：不依赖系统logcat（部分定制系统会限制App读取自身logcat），
+    // 直接把日志存在进程内存里，供设置界面的"查看运行日志"按钮读取，跨机型更可靠。
+    private static final int LOG_CAPACITY = 300;
+    private static final ArrayDeque<String> LOG_BUFFER = new ArrayDeque<>();
+
+    private static synchronized void appendLog(String msg) {
+        Log.d(TAG, msg);
+        String line = DateFormat.format("HH:mm:ss", System.currentTimeMillis()) + "  " + msg;
+        LOG_BUFFER.addLast(line);
+        while (LOG_BUFFER.size() > LOG_CAPACITY) {
+            LOG_BUFFER.removeFirst();
+        }
+    }
+
+    public static synchronized String getLogSnapshot() {
+        if (LOG_BUFFER.isEmpty()) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder();
+        for (String line : LOG_BUFFER) {
+            sb.append(line).append("\n");
+        }
+        return sb.toString();
+    }
+
     private CatConfig cachedConfig;
     private String userOriginal = "";
     private String lastSet = "";
@@ -60,7 +87,7 @@ public class QQAccessibilityService extends AccessibilityService {
             if (src != null) {
                 String id = src.getViewIdResourceName();
                 if (ID_SEND.equals(id) || isSendLikeNode(src)) {
-                    Log.d(TAG, "点击发送，兜底处理");
+                    appendLog("点击发送，兜底处理");
                     doProcess(true);
                 }
                 src.recycle();
@@ -69,6 +96,21 @@ public class QQAccessibilityService extends AccessibilityService {
             return;
         }
         if (type == 16) {
+            // 关键修复：不再"只要屏幕内容变化就重新扫一遍找输入框"，
+            // 而是先看这次变化事件本身是从哪个控件发出的（e.getSource()）。
+            // 只有当变化确实发生在一个"当前已聚焦的可编辑控件"上时才继续处理，
+            // 否则直接忽略——避免把别的UI刷新（比如收到新消息、页面滚动）
+            // 误判成用户在打字，进而把输入框里的占位提示文字当成真实内容改写/发送。
+            AccessibilityNodeInfo src = e.getSource();
+            if (src == null) {
+                return;
+            }
+            if (!src.isEditable() || !src.isFocused()) {
+                src.recycle();
+                return;
+            }
+            src.recycle();
+
             String mode = cfg.processingMode != null ? cfg.processingMode : CatConfig.MODE_PUNCTUATION;
             if (CatConfig.MODE_REALTIME.equals(mode)) {
                 doProcess(false);
@@ -93,7 +135,7 @@ public class QQAccessibilityService extends AccessibilityService {
             }
             String raw = cs.toString().trim();
             if (!raw.isEmpty() && isPunctuationEnding(raw)) {
-                Log.d(TAG, "标点触发: " + raw);
+                appendLog("标点触发: " + raw);
                 doProcess(false);
             }
         }
@@ -129,7 +171,7 @@ public class QQAccessibilityService extends AccessibilityService {
         this.processing = true;
         AccessibilityNodeInfo root = getRootInActiveWindow();
         if (root == null) {
-            Log.d(TAG, "[诊断] pkg=" + this.trackedPkg + " getRootInActiveWindow()返回null");
+            appendLog("[诊断] pkg=" + this.trackedPkg + " getRootInActiveWindow()返回null");
             this.processing = false;
             return;
         }
@@ -138,14 +180,14 @@ public class QQAccessibilityService extends AccessibilityService {
             inp = findEditable(root);
         }
         if (inp == null) {
-            Log.d(TAG, "[诊断] pkg=" + this.trackedPkg + " 未找到任何可编辑输入框节点");
+            appendLog("[诊断] pkg=" + this.trackedPkg + " 未找到任何可编辑输入框节点");
             root.recycle();
             this.processing = false;
             return;
         }
         CharSequence cs = inp.getText();
         if (cs == null || cs.length() == 0) {
-            Log.d(TAG, "[诊断] pkg=" + this.trackedPkg + " 找到输入框但当前文本为空(editable=" + inp.isEditable() + " focused=" + inp.isFocused() + " class=" + inp.getClassName() + ")");
+            appendLog("[诊断] pkg=" + this.trackedPkg + " 找到输入框但当前文本为空(editable=" + inp.isEditable() + " focused=" + inp.isFocused() + " class=" + inp.getClassName() + ")");
             inp.recycle();
             root.recycle();
             this.processing = false;
@@ -170,7 +212,7 @@ public class QQAccessibilityService extends AccessibilityService {
         long now = System.currentTimeMillis();
         long j = this.lastWriteTime;
         if (j > 0 && now - j < 600 && raw.equals(this.lastSet)) {
-            Log.d(TAG, "写入回显跳过");
+            appendLog("写入回显跳过");
             this.lastWriteTime = 0L;
             inp.recycle();
             root.recycle();
@@ -180,22 +222,22 @@ public class QQAccessibilityService extends AccessibilityService {
         boolean isRealtime = CatConfig.MODE_REALTIME.equals(cfg.processingMode);
         if (!isRealtime && this.lastSet.isEmpty()) {
             this.userOriginal = stripAll(raw, cfg);
-            Log.d(TAG, "标点首次剥离: " + this.userOriginal);
+            appendLog("标点首次剥离: " + this.userOriginal);
         } else if (this.lastSet.isEmpty() || !raw.startsWith(this.lastSet)) {
             if (this.lastSet.isEmpty()) {
                 this.userOriginal = stripAll(raw, cfg);
-                Log.d(TAG, "首条剥离: " + this.userOriginal);
+                appendLog("首条剥离: " + this.userOriginal);
             } else {
                 this.userOriginal = stripAll(raw, cfg);
-                Log.d(TAG, "不匹配剥离: " + this.userOriginal);
+                appendLog("不匹配剥离: " + this.userOriginal);
             }
         } else {
             String added = raw.substring(this.lastSet.length());
             this.userOriginal += added;
-            Log.d(TAG, "前缀增量: +" + added + "  userOriginal=" + this.userOriginal);
+            appendLog("前缀增量: +" + added + "  userOriginal=" + this.userOriginal);
         }
         if (this.userOriginal.isEmpty()) {
-            Log.d(TAG, "原文为空，跳过");
+            appendLog("原文为空，跳过");
             inp.recycle();
             root.recycle();
             this.processing = false;
@@ -207,9 +249,9 @@ public class QQAccessibilityService extends AccessibilityService {
         }
         String target = TextProcessor.process(this.userOriginal, effectiveCfg);
         if (!target.equals(raw)) {
-            Log.d(TAG, "写入: raw=" + raw + "  userOriginal=" + this.userOriginal + "  target=" + target);
+            appendLog("写入: raw=" + raw + "  userOriginal=" + this.userOriginal + "  target=" + target);
             boolean ok = setText(inp, target);
-            Log.d(TAG, "[诊断] pkg=" + this.trackedPkg + " 写入调用返回=" + ok + "（如果这里是true但App里没变化，说明是该App拦截了无障碍写入）");
+            appendLog("[诊断] pkg=" + this.trackedPkg + " 写入调用返回=" + ok + "（如果这里是true但App里没变化，说明是该App拦截了无障碍写入）");
             if (ok) {
                 this.lastSet = target;
                 this.lastWriteTime = System.currentTimeMillis();

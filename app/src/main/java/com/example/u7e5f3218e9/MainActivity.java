@@ -406,22 +406,10 @@ public class MainActivity extends Activity {
     }
 
     private void showDebugLog() {
-        String log;
-        try {
-            Process process = Runtime.getRuntime().exec(new String[]{"logcat", "-d", "-t", "300", "-s", "QQCatSvc:*"});
-            BufferedReader br = new BufferedReader(new InputStreamReader(process.getInputStream()));
-            StringBuilder sb = new StringBuilder();
-            String line;
-            while ((line = br.readLine()) != null) {
-                sb.append(line).append("\n");
-            }
-            br.close();
-            log = sb.toString();
-            if (log.trim().isEmpty()) {
-                log = "（暂无日志。请先确认无障碍服务已开启，并在目标App里打字触发一次，再回来点这个按钮看日志）";
-            }
-        } catch (Exception e) {
-            log = "读取日志失败: " + e.getMessage() + "\n\n（部分厂商定制系统可能限制App读取自身日志，如果一直是这个报错，请改用Termux里执行:\nlogcat -d -s QQCatSvc:*\n来查看）";
+        String log = QQAccessibilityService.getLogSnapshot();
+        if (log == null || log.trim().isEmpty()) {
+            log = "（暂无日志。请先确认无障碍服务已开启，并在目标App里打字触发一次，再回来点这个按钮看日志。\n"
+                    + "注意：这份日志是App自己在内存里记的，重启App或服务后会清空，不依赖系统logcat，理论上不受机型限制）";
         }
         final String finalLog = log;
 
