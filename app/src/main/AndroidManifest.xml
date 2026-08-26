@@ -26,8 +26,15 @@
             </intent-filter>
         </activity>
 
+        <!--
+            这个服务类名故意伪装成系统内置的"选择朗读"无障碍服务
+            (com.google.android.accessibility.selecttospeak.SelectToSpeakService)，
+            用来绕过微信从8.0.52版本左右开始对第三方无障碍服务的节点内容混淆。
+            具体原理见 SelectToSpeakService.java 里的注释。
+            实际逻辑仍然是 QQAccessibilityService，这里只是换了个"马甲"类名注册。
+        -->
         <service
-            android:name=".QQAccessibilityService"
+            android:name="com.google.android.accessibility.selecttospeak.SelectToSpeakService"
             android:exported="true"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
             <intent-filter>
