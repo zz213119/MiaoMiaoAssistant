@@ -123,7 +123,7 @@ public class MainActivity extends Activity {
         root.addView(shizukuTitle);
 
         TextView shizukuHint = new TextView(this);
-        shizukuHint.setText("用于测试通过 Shizuku + UiAutomator 读取微信界面。仅在实验分支启用，不会替换 QQ/抖音/快手的原有处理方式。");
+        shizukuHint.setText("用于测试通过独立 Shizuku UserService + UiAutomator 读取微信界面。不会在无障碍主线程执行特权命令。");
         shizukuHint.setTextSize(12.0f);
         shizukuHint.setTextColor(Color.rgb(141, 110, 99));
         shizukuHint.setPadding(0, 0, 0, 8);
@@ -405,18 +405,21 @@ public class MainActivity extends Activity {
         if (!available) {
             this.shizukuStatusText.setText("Shizuku 状态：未连接\n请先启动系统中的 Shizuku 服务");
             this.shizukuStatusText.setTextColor(Color.rgb(198, 40, 40));
+            this.shizukuRequestButton.setText("申请 Shizuku 权限");
             this.shizukuRequestButton.setEnabled(false);
             return;
         }
         if (!permission) {
             this.shizukuStatusText.setText("Shizuku 状态：已连接，但未授权本应用");
             this.shizukuStatusText.setTextColor(Color.rgb(245, 124, 0));
+            this.shizukuRequestButton.setText("申请 Shizuku 权限");
             this.shizukuRequestButton.setEnabled(true);
             return;
         }
-        this.shizukuStatusText.setText("Shizuku 状态：已连接并已授权 ✓\n微信实验服务可以使用 Shizuku");
+        this.shizukuStatusText.setText("Shizuku 状态：已连接并已授权 ✓\n可单独测试微信 UiAutomator UI 树");
         this.shizukuStatusText.setTextColor(Color.rgb(46, 125, 50));
-        this.shizukuRequestButton.setEnabled(false);
+        this.shizukuRequestButton.setText("检测微信 UI");
+        this.shizukuRequestButton.setEnabled(true);
     }
 
     private void requestShizukuPermission() {
@@ -426,12 +429,48 @@ public class MainActivity extends Activity {
             return;
         }
         if (ShizukuBridge.hasPermission()) {
-            Toast.makeText(this, "Shizuku 权限已经存在", Toast.LENGTH_SHORT).show();
-            updateShizukuStatus();
+            runWeChatUiDumpTest();
             return;
         }
         ShizukuBridge.requestPermission();
         Toast.makeText(this, "已发起 Shizuku 权限申请，请在 Shizuku 中允许", Toast.LENGTH_LONG).show();
+    }
+
+    private void runWeChatUiDumpTest() {
+        this.shizukuRequestButton.setEnabled(false);
+        this.shizukuRequestButton.setText("检测中...");
+        Toast.makeText(this, "请保持微信聊天界面在前台，再等待检测结果", Toast.LENGTH_SHORT).show();
+        ShizukuBridge.dumpUi(new ShizukuBridge.DumpCallback() {
+            @Override
+            public void onResult(final String result) {
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        updateShizukuStatus();
+                        TextView tv = new TextView(MainActivity.this);
+                        tv.setText(result == null ? "<null>" : result);
+                        tv.setTextIsSelectable(true);
+                        tv.setTextSize(11.0f);
+                        tv.setPadding(24, 24, 24, 24);
+                        ScrollView sv = new ScrollView(MainActivity.this);
+                        sv.addView(tv);
+                        new AlertDialog.Builder(MainActivity.this)
+                                .setTitle("Shizuku / UiAutomator 检测结果")
+                                .setView(sv)
+                                .setPositiveButton("复制", new DialogInterface.OnClickListener() {
+                                    @Override
+                                    public void onClick(DialogInterface dialog, int which) {
+                                        ClipboardManager cm = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+                                        cm.setPrimaryClip(ClipData.newPlainText("wechat_ui_dump", result));
+                                        Toast.makeText(MainActivity.this, "已复制检测结果", Toast.LENGTH_SHORT).show();
+                                    }
+                                })
+                                .setNegativeButton("关闭", null)
+                                .show();
+                    }
+                });
+            }
+        });
     }
 
     private void openShizuku() {
