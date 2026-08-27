@@ -397,7 +397,13 @@ public class QQAccessibilityService extends AccessibilityService {
             return;
         }
         CatConfig effectiveCfg = cfg;
-        if (isRealtime && cfg.enableRandomEmoticon && !isSendClick) {
+        // 微信的发送按钮点击事件我们从来没能可靠捕捉到（大概率跟输入框一样受同样的
+        // 内容混淆/事件屏蔽影响），导致"打字时先不加颜文字、点发送那一刻才补上"这套
+        // 逻辑在微信这边永远等不到触发时机，颜文字实质上永远加不上。所以微信这边
+        // 干脆放弃这个"防闪烁"优化，每次处理都直接带上颜文字，接受打字过程中
+        // 颜文字会随机变换这个小瑕疵，换来颜文字确实能用。
+        boolean isWeChat = CatConfig.PKG_WECHAT.equals(this.trackedPkg);
+        if (isRealtime && cfg.enableRandomEmoticon && !isSendClick && !isWeChat) {
             effectiveCfg = cloneConfigWithoutEmoticon(cfg);
         }
         String target = TextProcessor.process(this.userOriginal, effectiveCfg);
