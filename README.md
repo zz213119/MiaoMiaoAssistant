@@ -1,7 +1,8 @@
 # 喵喵助手-文本改写助手 (QQMiaoAssistant)
 
 基于 Android **无障碍服务（Accessibility Service）** 的文本改写 / 替换工具，支持 **QQ / 微信 / 抖音 / 快手 / 全局模式 / 自定义应用**。
-正在制作1.1版本中不建议现在拉取仓库
+
+正在制作1.1版本中不建议现在拉取仓库，下载链接和安装包还是可以正常使用的
 
 蓝奏云下载:https://wwbup.lanzout.com/iqxQR44py33e
 
