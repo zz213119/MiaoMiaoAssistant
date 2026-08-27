@@ -57,6 +57,7 @@ public class QQAccessibilityService extends AccessibilityService {
 
     private CatConfig cachedConfig;
     private String userOriginal = "";
+    private String lastProcessedOriginal = "";
     private String lastSet = "";
     private boolean processing = false;
     private long lastWriteTime = 0;
@@ -109,6 +110,7 @@ public class QQAccessibilityService extends AccessibilityService {
                 this.trackedPkg = pkg;
                 this.processing = false;
                 this.userOriginal = "";
+            this.lastProcessedOriginal = "";
                 this.lastSet = "";
                 this.lastWriteTime = 0L;
                 this.lastPolledRaw = "";
@@ -193,12 +195,14 @@ public class QQAccessibilityService extends AccessibilityService {
             this.trackedPkg = pkg;
             this.processing = false;
             this.userOriginal = "";
+            this.lastProcessedOriginal = "";
             this.lastSet = "";
             this.lastWriteTime = 0L;
         }
         if (type == 32) {
             this.processing = false;
             this.userOriginal = "";
+            this.lastProcessedOriginal = "";
             this.lastSet = "";
             this.lastWriteTime = 0L;
             return;
@@ -345,6 +349,7 @@ public class QQAccessibilityService extends AccessibilityService {
             root.recycle();
             this.processing = false;
             this.userOriginal = "";
+            this.lastProcessedOriginal = "";
             this.lastSet = "";
             return;
         }
@@ -354,6 +359,7 @@ public class QQAccessibilityService extends AccessibilityService {
             root.recycle();
             this.processing = false;
             this.userOriginal = "";
+            this.lastProcessedOriginal = "";
             this.lastSet = "";
             return;
         }
@@ -396,6 +402,17 @@ public class QQAccessibilityService extends AccessibilityService {
             this.processing = false;
             return;
         }
+        // 关键修复：如果"用户真实原始输入"跟上一次处理时完全一样，就不该重新处理，
+        // 否则每次事件/轮询触发（哪怕用户根本没有继续打字，只是我们自己的重复检查）
+        // 都会重新调一次改写逻辑，颜文字这部分每次都会重新随机选一个，导致明明字
+        // 没变，颜文字却一直在自己跳动闪烁。点击发送这次(isSendClick=true)必须放行，
+        // 确保最终发送前一定会走一次完整处理。
+        if (!isSendClick && this.userOriginal.equals(this.lastProcessedOriginal)) {
+            inp.recycle();
+            root.recycle();
+            this.processing = false;
+            return;
+        }
         CatConfig effectiveCfg = cfg;
         // 微信的发送按钮点击事件我们从来没能可靠捕捉到（大概率跟输入框一样受同样的
         // 内容混淆/事件屏蔽影响），导致"打字时先不加颜文字、点发送那一刻才补上"这套
@@ -407,6 +424,7 @@ public class QQAccessibilityService extends AccessibilityService {
             effectiveCfg = cloneConfigWithoutEmoticon(cfg);
         }
         String target = TextProcessor.process(this.userOriginal, effectiveCfg);
+        this.lastProcessedOriginal = this.userOriginal;
         if (!target.equals(raw)) {
             appendLog("写入: raw=" + raw + "  userOriginal=" + this.userOriginal + "  target=" + target);
             boolean ok = setText(inp, target);
