@@ -2,6 +2,7 @@
 
 基于 Android **无障碍服务（Accessibility Service）** 的文本改写 / 替换工具，支持 **QQ / 微信 / 抖音 / 快手 / 全局模式 / 自定义应用**。
 正在制作1.1版本中不建议现在拉取仓库
+
 蓝奏云下载:https://wwbup.lanzout.com/iqxQR44py33e
 
 ## 项目来源
