@@ -74,8 +74,18 @@ public class CatConfig {
      * 判断某个包名当前是否处于处理范围内。
      * 全局模式开启时，忽略其余单项开关，对所有应用生效。
      */
+    // 这几个包名永远不处理，不管全局模式开不开：都是系统界面/自身App，
+    // 不是真正的聊天输入场景。之前发现全局模式下 com.android.systemui
+    // （比如输入法上方候选词栏、系统弹窗这类临时界面）会被误当成目标应用，
+    // 跟真正的聊天App来回抢着处理同一段文字，导致状态错乱、颜文字疯狂跳动。
+    private static final String PKG_SYSTEMUI = "com.android.systemui";
+    private static final String PKG_SELF = "com.example.u7e5f3218e9";
+
     public boolean isTargetPackage(String pkg) {
         if (pkg == null || pkg.isEmpty()) {
+            return false;
+        }
+        if (PKG_SYSTEMUI.equals(pkg) || PKG_SELF.equals(pkg)) {
             return false;
         }
         if (this.globalMode) {
