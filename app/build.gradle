@@ -10,8 +10,8 @@ android {
         applicationId "com.example.u7e5f3218e9"
         minSdk 23
         targetSdk 34
-        versionCode 1
-        versionName "1.0"
+        versionCode 2
+        versionName "1.1"
     }
 
     buildTypes {

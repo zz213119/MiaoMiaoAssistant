@@ -38,6 +38,7 @@ public class MainActivity extends Activity {
     private TextView statusText;
     private Button toggleButton;
     private CheckBox cbDebugLog;
+    private CheckBox cbComboAppendEmoticon;
 
     // 应用范围
     private CheckBox cbAppQQ;
@@ -227,6 +228,25 @@ public class MainActivity extends Activity {
         root.addView(this.etAppendText);
         this.cbEmoticon = addCheckbox(root, "句末颜文字", "在消息末尾附加随机颜文字", this.config.enableRandomEmoticon);
 
+        this.cbComboAppendEmoticon = addCheckbox(root, "句末颜文字+断句追加", "颜文字需配合断句追加才能正常生效，开启后自动联动上面两项（开关变灰，但追加内容仍可编辑）", this.config.enableComboAppendEmoticon);
+        this.cbComboAppendEmoticon.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
+                if (isChecked) {
+                    MainActivity.this.cbAppend.setChecked(true);
+                    MainActivity.this.cbEmoticon.setChecked(true);
+                }
+                MainActivity.this.cbAppend.setEnabled(!isChecked);
+                MainActivity.this.cbEmoticon.setEnabled(!isChecked);
+            }
+        });
+        if (this.config.enableComboAppendEmoticon) {
+            this.cbAppend.setChecked(true);
+            this.cbEmoticon.setChecked(true);
+            this.cbAppend.setEnabled(false);
+            this.cbEmoticon.setEnabled(false);
+        }
+
         TextView ruleTitle = new TextView(this);
         ruleTitle.setText("文本替换规则");
         ruleTitle.setTextSize(18.0f);
@@ -311,6 +331,34 @@ public class MainActivity extends Activity {
         hint.setGravity(17);
         hint.setPadding(16, 36, 16, 8);
         root.addView(hint);
+
+        LinearLayout footerRow = new LinearLayout(this);
+        footerRow.setOrientation(0);
+        footerRow.setGravity(17);
+        footerRow.setPadding(16, 4, 16, 24);
+        TextView githubLink = new TextView(this);
+        githubLink.setText("GitHub");
+        githubLink.setTextSize(12.0f);
+        githubLink.setTextColor(Color.rgb(33, 150, 243));
+        githubLink.setPaintFlags(githubLink.getPaintFlags() | android.graphics.Paint.UNDERLINE_TEXT_FLAG);
+        githubLink.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                try {
+                    Intent intent = new Intent(Intent.ACTION_VIEW, android.net.Uri.parse("https://github.com/zz213119/MiaoMiaoAssistant"));
+                    MainActivity.this.startActivity(intent);
+                } catch (Exception e) {
+                    Toast.makeText(MainActivity.this, "无法打开浏览器", Toast.LENGTH_SHORT).show();
+                }
+            }
+        });
+        footerRow.addView(githubLink);
+        TextView localNote = new TextView(this);
+        localNote.setText("　·　本软件完全本地运行，无需联网");
+        localNote.setTextSize(11.0f);
+        localNote.setTextColor(Color.rgb(161, 136, 127));
+        footerRow.addView(localNote);
+        root.addView(footerRow);
 
         scrollView.addView(root);
         setContentView(scrollView);
@@ -516,6 +564,7 @@ public class MainActivity extends Activity {
 
             this.config.globalMode = this.cbGlobalMode.isChecked();
             this.config.enableDebugLog = this.cbDebugLog.isChecked();
+            this.config.enableComboAppendEmoticon = this.cbComboAppendEmoticon.isChecked();
             this.config.enableQQ = this.cbAppQQ.isChecked();
             this.config.enableWeChat = this.cbAppWeChat.isChecked();
             this.config.enableDouyin = this.cbAppDouyin.isChecked();

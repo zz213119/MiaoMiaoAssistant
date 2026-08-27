@@ -25,6 +25,7 @@ public class CatConfig {
     public static final String KEY_APP_KUAISHOU = "app_kuaishou";
     public static final String KEY_GLOBAL_MODE = "global_mode";
     public static final String KEY_ENABLE_DEBUG_LOG = "enable_debug_log";
+    public static final String KEY_ENABLE_COMBO = "enable_combo_append_emoticon";
     public static final String KEY_CUSTOM_PACKAGES = "custom_packages";
 
     public static final String PKG_QQ = "com.tencent.mobileqq";
@@ -66,6 +67,7 @@ public class CatConfig {
     // 默认关闭：调试日志主要用于排查兼容性问题，正常使用时不需要一直记，
     // 关闭后能省一点点性能开销，也避免日志缓冲区被高频诊断信息挤满。
     public boolean enableDebugLog = false;
+    public boolean enableComboAppendEmoticon = false;
     public String[] customPackages = new String[0];
 
     /**
@@ -158,6 +160,7 @@ public class CatConfig {
         cfg.enableKuaishou = sp.getBoolean(KEY_APP_KUAISHOU, false);
         cfg.globalMode = sp.getBoolean(KEY_GLOBAL_MODE, false);
         cfg.enableDebugLog = sp.getBoolean(KEY_ENABLE_DEBUG_LOG, false);
+        cfg.enableComboAppendEmoticon = sp.getBoolean(KEY_ENABLE_COMBO, false);
         String customPkgStr = sp.getString(KEY_CUSTOM_PACKAGES, "");
         if (customPkgStr != null && !customPkgStr.trim().isEmpty()) {
             List<String> pkgList = new ArrayList<>();
@@ -215,6 +218,7 @@ public class CatConfig {
         ed.putBoolean(KEY_APP_KUAISHOU, this.enableKuaishou);
         ed.putBoolean(KEY_GLOBAL_MODE, this.globalMode);
         ed.putBoolean(KEY_ENABLE_DEBUG_LOG, this.enableDebugLog);
+        ed.putBoolean(KEY_ENABLE_COMBO, this.enableComboAppendEmoticon);
         ed.putString(KEY_CUSTOM_PACKAGES, join(this.customPackages, "\n"));
         ed.apply();
     }
