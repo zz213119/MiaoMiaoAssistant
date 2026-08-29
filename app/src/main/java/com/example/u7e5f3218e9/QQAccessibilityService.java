@@ -118,6 +118,35 @@ public class QQAccessibilityService extends AccessibilityService {
     private long lastPollDiagTime = 0;
     private long lastEmptyDiagTime = 0;
 
+    /**
+     * 判断这个节点所在的窗口是不是"应用窗口"（普通App正常界面）。
+     * 输入法弹出的窗口、系统状态栏/分屏悬浮层这些，Android会把窗口类型标记成
+     * 非TYPE_APPLICATION（比如TYPE_INPUT_METHOD、TYPE_SYSTEM）。
+     *
+     * 关键修复：之前遇到的干扰问题（vivo系统组件、讯飞输入法）本质上是同一类——
+     * 某个"非聊天App本体"的窗口也被处理了，跟真正的聊天App抢着改同一段文字。
+     * 逐个拉黑具体包名治标不治本（换个手机、换个输入法牌子又要重新踩坑），
+     * 用窗口类型这个通用标记来判断，不管是哪个厂商的系统组件、哪个牌子的
+     * 输入法，只要不是"应用窗口"就一律不处理，一次性堵死这整类问题。
+     */
+    private boolean isAppWindow(AccessibilityNodeInfo node) {
+        if (node == null) {
+            return false;
+        }
+        try {
+            android.view.accessibility.AccessibilityWindowInfo w = node.getWindow();
+            if (w == null) {
+                // 拿不到窗口信息时保守放行，避免因个别机型/权限差异导致功能完全用不了
+                return true;
+            }
+            int type = w.getType();
+            w.recycle();
+            return type == android.view.accessibility.AccessibilityWindowInfo.TYPE_APPLICATION;
+        } catch (Exception e) {
+            return true;
+        }
+    }
+
     private void pollOnce() {
         try {
             long now = System.currentTimeMillis();
@@ -131,6 +160,10 @@ public class QQAccessibilityService extends AccessibilityService {
             }
             AccessibilityNodeInfo root = getRootInActiveWindow();
             if (root == null) {
+                return;
+            }
+            if (!isAppWindow(root)) {
+                root.recycle();
                 return;
             }
             String pkg = root.getPackageName() != null ? root.getPackageName().toString() : "";
@@ -243,7 +276,7 @@ public class QQAccessibilityService extends AccessibilityService {
             if (src == null) {
                 return;
             }
-            boolean srcOk = src.isEditable() && src.isFocused() && !src.isShowingHintText();
+            boolean srcOk = src.isEditable() && src.isFocused() && !src.isShowingHintText() && isAppWindow(src);
             if (!srcOk && type == 2048) {
                 // type=2048(界面内容变化)的事件源经常是一个容器节点，不是输入框本身，
                 // 这种情况下退回到"在当前窗口里找已聚焦且非占位文字的可编辑控件"。
@@ -330,6 +363,12 @@ public class QQAccessibilityService extends AccessibilityService {
         AccessibilityNodeInfo root = getRootInActiveWindow();
         if (root == null) {
             appendLog("[诊断] pkg=" + pkg + " getRootInActiveWindow()返回null");
+            this.processing = false;
+            return;
+        }
+        if (!isAppWindow(root)) {
+            appendLog("[诊断] pkg=" + pkg + " 当前活动窗口不是应用窗口(可能是输入法/系统悬浮层)，跳过");
+            root.recycle();
             this.processing = false;
             return;
         }
