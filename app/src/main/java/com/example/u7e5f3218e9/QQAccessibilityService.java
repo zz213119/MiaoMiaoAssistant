@@ -89,7 +89,7 @@ public class QQAccessibilityService extends AccessibilityService {
     // 效果上跟"标点触发"模式一样稳（同一时间只处理一次，不给输入法反复
     // 插进来抢节奏的机会），但不需要用户手动打标点。发送这个动作(isSendClick=true)
     // 需要立刻处理，不走防抖。
-    private static final long DEBOUNCE_MS = 550L;
+    private static final long DEBOUNCE_MS = 180L;
     private final Map<String, Runnable> pendingRunnables = new HashMap<>();
 
     private void scheduleDebouncedProcess(final String pkg) {
@@ -125,6 +125,24 @@ public class QQAccessibilityService extends AccessibilityService {
     }
 
     private CatConfig cachedConfig;
+    // 关键修复：直接问系统"当前正在用的输入法是哪个"，动态排除掉它。
+    // 之前试过按包名硬编码、按窗口类型判断，都在这台设备上失效了（讯飞、
+    // vivo自带输入法都出现过输入法自己的窗口也被当成目标处理、跟聊天App
+    // 抢着写同一段文字的情况）。用系统设置里"当前默认输入法"这个动态查询
+    // 结果最可靠，不管用户装的是哪个牌子的输入法都能准确排除。
+    private volatile String currentImePkg = "";
+
+    private void refreshCurrentImePkg() {
+        try {
+            String ime = android.provider.Settings.Secure.getString(getContentResolver(), android.provider.Settings.Secure.DEFAULT_INPUT_METHOD);
+            if (ime != null) {
+                int slash = ime.indexOf('/');
+                this.currentImePkg = slash > 0 ? ime.substring(0, slash) : ime;
+            }
+        } catch (Exception e) {
+            // 查询失败就保留旧值，不影响其他逻辑
+        }
+    }
     private boolean processing = false;
     // 发送后的"冷静期"：发送动作触发后的这段时间里，即使收到再多事件通知
     // 也先不处理，把节奏让给宿主App自己走完"读取文字→发送→清空输入框"的流程，
@@ -198,7 +216,7 @@ public class QQAccessibilityService extends AccessibilityService {
                 return;
             }
             String pkg = root.getPackageName() != null ? root.getPackageName().toString() : "";
-            if (!cfg.isTargetPackage(pkg)) {
+            if (!cfg.isTargetPackage(pkg) || pkg.equals(this.currentImePkg)) {
                 root.recycle();
                 return;
             }
@@ -260,6 +278,7 @@ public class QQAccessibilityService extends AccessibilityService {
         // 而直接return，永远走不到刷新配置那一步，导致设置要等系统重启服务才生效。
         if (type == 32) {
             this.cachedConfig = loadConfigAndSyncLogFlag();
+            refreshCurrentImePkg();
         }
         CatConfig cfg = this.cachedConfig;
         if (cfg == null) {
@@ -270,7 +289,7 @@ public class QQAccessibilityService extends AccessibilityService {
             appendLog("[窗口切换] pkg=" + pkg + " 全局模式=" + cfg.globalMode + " 微信开关=" + cfg.enableWeChat
                     + " isTargetPackage=" + cfg.isTargetPackage(pkg));
         }
-        if (!cfg.isTargetPackage(pkg)) {
+        if (!cfg.isTargetPackage(pkg) || pkg.equals(this.currentImePkg)) {
             return;
         }
         // 发送冷静期：刚触发过发送动作，短时间内所有事件一律忽略，
@@ -382,6 +401,10 @@ public class QQAccessibilityService extends AccessibilityService {
 
     private void doProcess(String pkg, boolean isSendClick) {
         if (this.processing) {
+            return;
+        }
+        if (pkg.equals(this.currentImePkg)) {
+            // 双保险：即使前面的判断都没拦住，这里再拦一次，绝不处理当前输入法自己的包名
             return;
         }
         this.processing = true;
@@ -499,15 +522,11 @@ public class QQAccessibilityService extends AccessibilityService {
             return;
         }
         CatConfig effectiveCfg = cfg;
-        // 微信的发送按钮点击事件我们从来没能可靠捕捉到（大概率跟输入框一样受同样的
-        // 内容混淆/事件屏蔽影响），导致"打字时先不加颜文字、点发送那一刻才补上"这套
-        // 逻辑在微信这边永远等不到触发时机，颜文字实质上永远加不上。所以微信这边
-        // 干脆放弃这个"防闪烁"优化，每次处理都直接带上颜文字，接受打字过程中
-        // 颜文字会随机变换这个小瑕疵，换来颜文字确实能用。
-        boolean isWeChat = CatConfig.PKG_WECHAT.equals(pkg);
-        if (isRealtime && cfg.enableRandomEmoticon && !isSendClick && !isWeChat) {
-            effectiveCfg = cloneConfigWithoutEmoticon(cfg);
-        }
+        // 关键修复：之前只给微信一家开了"跳过防闪烁抑制"的特例，导致其他App
+        // （抖音等）的"点击发送"事件同样不可靠捕捉时，颜文字永远等不到触发时机。
+        // 现在既然已经用输入法排除+防抖来控制处理频率了，"打字过程中先不加
+        // 颜文字、等发送那一刻才补上"这层额外抑制不再必要，直接对所有App
+        // 一视同仁地放开，颜文字每次都会带上。
         String target = TextProcessor.process(st.userOriginal, effectiveCfg);
         st.lastProcessedOriginal = st.userOriginal;
         if (!target.equals(raw)) {
@@ -708,6 +727,7 @@ public class QQAccessibilityService extends AccessibilityService {
         this.pollHandler.removeCallbacks(this.pollRunnable);
         this.pollHandler.postDelayed(this.pollRunnable, POLL_INTERVAL_MS);
         this.cachedConfig = loadConfigAndSyncLogFlag();
+        refreshCurrentImePkg();
         this.pkgStates.clear();
         for (Runnable r : this.pendingRunnables.values()) {
             this.pollHandler.removeCallbacks(r);
