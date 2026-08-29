@@ -84,6 +84,37 @@ public class QQAccessibilityService extends AccessibilityService {
 
     private final Map<String, PkgState> pkgStates = new HashMap<>();
 
+    // 关键修复：实时模式改成"防抖"处理——不再每敲一个字就立刻处理一次，
+    // 而是等用户停下来不打字了、过这么一小段安静时间之后才统一处理一次。
+    // 效果上跟"标点触发"模式一样稳（同一时间只处理一次，不给输入法反复
+    // 插进来抢节奏的机会），但不需要用户手动打标点。发送这个动作(isSendClick=true)
+    // 需要立刻处理，不走防抖。
+    private static final long DEBOUNCE_MS = 550L;
+    private final Map<String, Runnable> pendingRunnables = new HashMap<>();
+
+    private void scheduleDebouncedProcess(final String pkg) {
+        Runnable prev = this.pendingRunnables.get(pkg);
+        if (prev != null) {
+            this.pollHandler.removeCallbacks(prev);
+        }
+        Runnable r = new Runnable() {
+            @Override
+            public void run() {
+                QQAccessibilityService.this.pendingRunnables.remove(pkg);
+                doProcess(pkg, false);
+            }
+        };
+        this.pendingRunnables.put(pkg, r);
+        this.pollHandler.postDelayed(r, DEBOUNCE_MS);
+    }
+
+    private void cancelPending(String pkg) {
+        Runnable prev = this.pendingRunnables.remove(pkg);
+        if (prev != null) {
+            this.pollHandler.removeCallbacks(prev);
+        }
+    }
+
     private PkgState stateFor(String pkg) {
         PkgState s = this.pkgStates.get(pkg);
         if (s == null) {
@@ -209,7 +240,7 @@ public class QQAccessibilityService extends AccessibilityService {
             appendLog("[轮询] pkg=" + pkg + " 检测到输入框内容: " + raw);
             String mode = cfg.processingMode != null ? cfg.processingMode : CatConfig.MODE_PUNCTUATION;
             if (CatConfig.MODE_REALTIME.equals(mode)) {
-                doProcess(pkg, false);
+                scheduleDebouncedProcess(pkg);
             } else if (isPunctuationEnding(raw)) {
                 appendLog("[轮询] 标点触发: " + raw);
                 doProcess(pkg, false);
@@ -250,6 +281,7 @@ public class QQAccessibilityService extends AccessibilityService {
         if (type == 32) {
             // 窗口切换：清空这个包名自己的记账状态即可，不影响其他包名。
             this.pkgStates.remove(pkg);
+            cancelPending(pkg);
             this.processing = false;
             return;
         }
@@ -297,7 +329,7 @@ public class QQAccessibilityService extends AccessibilityService {
 
             String mode = cfg.processingMode != null ? cfg.processingMode : CatConfig.MODE_PUNCTUATION;
             if (CatConfig.MODE_REALTIME.equals(mode)) {
-                doProcess(pkg, false);
+                scheduleDebouncedProcess(pkg);
                 return;
             }
             AccessibilityNodeInfo root = getRootInActiveWindow();
@@ -677,5 +709,9 @@ public class QQAccessibilityService extends AccessibilityService {
         this.pollHandler.postDelayed(this.pollRunnable, POLL_INTERVAL_MS);
         this.cachedConfig = loadConfigAndSyncLogFlag();
         this.pkgStates.clear();
+        for (Runnable r : this.pendingRunnables.values()) {
+            this.pollHandler.removeCallbacks(r);
+        }
+        this.pendingRunnables.clear();
     }
 }
