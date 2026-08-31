@@ -57,6 +57,10 @@ public class QQAccessibilityService extends AccessibilityService {
     }
 
     private CatConfig cachedConfig;
+    // 用于让设置界面的"关闭服务"按钮能找到当前正在运行的服务实例并调用disableSelf()。
+    // 无障碍服务没有从外部Activity直接关闭自己的公开API，只能服务自己调用
+    // disableSelf()，所以这里留一个静态引用给Activity间接触发。
+    private static volatile QQAccessibilityService instance;
     private String userOriginal = "";
     private String lastSet = "";
     private boolean processing = false;
@@ -605,12 +609,26 @@ public class QQAccessibilityService extends AccessibilityService {
     @Override
     public boolean onUnbind(android.content.Intent intent) {
         this.pollHandler.removeCallbacks(this.pollRunnable);
+        instance = null;
         return super.onUnbind(intent);
+    }
+
+    /**
+     * 供设置界面的"关闭服务"按钮调用：如果服务当前正在运行，就让它自己调用
+     * disableSelf()关闭无障碍服务（系统级API，24以下没有，低版本直接忽略）。
+     */
+    public static void requestDisable() {
+        QQAccessibilityService svc = instance;
+        if (svc != null && android.os.Build.VERSION.SDK_INT >= 24) {
+            svc.disableSelf();
+        }
+        instance = null;
     }
 
     @Override
     public void onServiceConnected() {
         super.onServiceConnected();
+        instance = this;
         AccessibilityServiceInfo i = new AccessibilityServiceInfo();
         // 关键修复：原来只监听32(窗口切换)+16(文字变化)+1(点击)。
         // 微信的输入框可能不会上报"文字变化"这个精确通知，而是只上报更宽泛的

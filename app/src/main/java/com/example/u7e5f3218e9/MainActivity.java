@@ -37,6 +37,7 @@ public class MainActivity extends Activity {
     private CheckBox rbRealtime;
     private TextView statusText;
     private Button toggleButton;
+    private Button closeServiceButton;
     private CheckBox cbDebugLog;
 
     // 应用范围
@@ -102,6 +103,22 @@ public class MainActivity extends Activity {
         });
         root.addView(this.toggleButton);
 
+        this.closeServiceButton = new Button(this);
+        this.closeServiceButton.setText("关闭服务");
+        this.closeServiceButton.setTextSize(14.0f);
+        this.closeServiceButton.setTextColor(Color.rgb(198, 40, 40));
+        this.closeServiceButton.setBackgroundColor(-1);
+        LinearLayout.LayoutParams closeLp = new LinearLayout.LayoutParams(-1, -2);
+        closeLp.setMargins(0, 8, 0, 0);
+        this.closeServiceButton.setLayoutParams(closeLp);
+        this.closeServiceButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                MainActivity.this.closeService();
+            }
+        });
+        root.addView(this.closeServiceButton);
+
         this.cbDebugLog = addCheckbox(root, "启用调试日志", "关闭后不再记录运行日志，能省一点点电；排查问题时再打开", this.config.enableDebugLog);
 
         Button logButton = new Button(this);
@@ -114,19 +131,20 @@ public class MainActivity extends Activity {
         });
         root.addView(logButton);
 
-        TextView logInfoLink = new TextView(this);
-        logInfoLink.setText("说明");
-        logInfoLink.setTextSize(12.0f);
-        logInfoLink.setTextColor(Color.rgb(153, 153, 153));
-        logInfoLink.setGravity(17);
-        logInfoLink.setPadding(0, 8, 0, 4);
-        logInfoLink.setOnClickListener(new View.OnClickListener() {
+        Button logInfoButton = new Button(this);
+        logInfoButton.setText("说明");
+        logInfoButton.setTextSize(13.0f);
+        logInfoButton.setTextColor(Color.rgb(102, 102, 102));
+        LinearLayout.LayoutParams logInfoLp = new LinearLayout.LayoutParams(-1, -2);
+        logInfoLp.setMargins(0, 8, 0, 4);
+        logInfoButton.setLayoutParams(logInfoLp);
+        logInfoButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 MainActivity.this.openUrl("https://mint13.cc.cd/MiaoMiaoAssistant.html");
             }
         });
-        root.addView(logInfoLink);
+        root.addView(logInfoButton);
         root.addView(divider());
 
         TextView scopeTitle = new TextView(this);
@@ -375,6 +393,10 @@ public class MainActivity extends Activity {
             return;
         }
         boolean enabled = isAccessibilityServiceEnabled();
+        if (this.closeServiceButton != null) {
+            this.closeServiceButton.setEnabled(enabled);
+            this.closeServiceButton.setAlpha(enabled ? 1.0f : 0.4f);
+        }
         if (enabled) {
             this.statusText.setText("服务状态：已开启");
             this.statusText.setTextColor(Color.rgb(46, 125, 50));
@@ -405,6 +427,22 @@ public class MainActivity extends Activity {
         } catch (Exception e) {
         }
         return false;
+    }
+
+    private void closeService() {
+        if (!isAccessibilityServiceEnabled()) {
+            Toast.makeText(this, "服务当前未开启", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        QQAccessibilityService.requestDisable();
+        Toast.makeText(this, "已关闭无障碍服务", Toast.LENGTH_SHORT).show();
+        // disableSelf()是异步系统调用，稍等一下再刷新状态显示，避免读到还没更新的旧状态
+        new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                MainActivity.this.updateServiceStatus();
+            }
+        }, 500L);
     }
 
     private void openUrl(String url) {
