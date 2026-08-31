@@ -338,8 +338,14 @@ public class QQAccessibilityService extends AccessibilityService {
         // （比如金额"1"后面被自动加上"喵"变成"1喵"，无法提交支付）。
         // 这里直接按inputType过滤，不影响普通聊天输入框（那些是TYPE_CLASS_TEXT）。
         int inputType = inp.getInputType();
-        boolean isNumberField = (inputType & InputType.TYPE_CLASS_NUMBER) != 0
-                || (inputType & InputType.TYPE_CLASS_PHONE) != 0;
+        // 注意：TYPE_CLASS_*是一个枚举值(TEXT=1/NUMBER=2/PHONE=3/DATETIME=4)存在低4位，
+        // 不是独立的二进制位标志，不能直接用"&"判断是否包含，必须先用掩码取出类字段
+        // 再做相等比较——否则比如TEXT(0001)会被PHONE(0011)的位运算误判命中(0001&0011=0001非零)，
+        // 导致所有普通文本输入框都被误判成"数字/电话类"而全部跳过改写。
+        int inputClass = inputType & InputType.TYPE_MASK_CLASS;
+        boolean isNumberField = inputClass == InputType.TYPE_CLASS_NUMBER
+                || inputClass == InputType.TYPE_CLASS_PHONE
+                || inputClass == InputType.TYPE_CLASS_DATETIME;
         if (isNumberField) {
             appendLog("[诊断] pkg=" + this.trackedPkg + " 输入框是数字/电话类型(inputType=" + inputType
                     + ")，跳过改写，避免影响支付/转账/验证码");
