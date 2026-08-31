@@ -113,6 +113,20 @@ public class MainActivity extends Activity {
             }
         });
         root.addView(logButton);
+
+        TextView logInfoLink = new TextView(this);
+        logInfoLink.setText("说明");
+        logInfoLink.setTextSize(12.0f);
+        logInfoLink.setTextColor(Color.rgb(153, 153, 153));
+        logInfoLink.setGravity(17);
+        logInfoLink.setPadding(0, 8, 0, 4);
+        logInfoLink.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                MainActivity.this.openUrl("https://mint13.cc.cd/MiaoMiaoAssistant.html");
+            }
+        });
+        root.addView(logInfoLink);
         root.addView(divider());
 
         TextView scopeTitle = new TextView(this);
@@ -312,6 +326,28 @@ public class MainActivity extends Activity {
         hint.setPadding(16, 36, 16, 8);
         root.addView(hint);
 
+        LinearLayout githubRow = new LinearLayout(this);
+        githubRow.setOrientation(0);
+        githubRow.setGravity(17);
+        githubRow.setPadding(0, 4, 0, 24);
+        TextView githubLink = new TextView(this);
+        githubLink.setText("GitHub");
+        githubLink.setTextSize(12.0f);
+        githubLink.setTextColor(Color.rgb(33, 150, 243));
+        githubLink.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                MainActivity.this.openUrl("https://github.com/zz213119/MiaoMiaoAssistant");
+            }
+        });
+        githubRow.addView(githubLink);
+        TextView localOnlyNote = new TextView(this);
+        localOnlyNote.setText("   本软件完全本地运行，无需联网");
+        localOnlyNote.setTextSize(12.0f);
+        localOnlyNote.setTextColor(Color.rgb(161, 136, 127));
+        githubRow.addView(localOnlyNote);
+        root.addView(githubRow);
+
         scrollView.addView(root);
         setContentView(scrollView);
     }
@@ -369,6 +405,15 @@ public class MainActivity extends Activity {
         } catch (Exception e) {
         }
         return false;
+    }
+
+    private void openUrl(String url) {
+        try {
+            Intent intent = new Intent(Intent.ACTION_VIEW, android.net.Uri.parse(url));
+            startActivity(intent);
+        } catch (Exception e) {
+            Toast.makeText(this, "无法打开链接", Toast.LENGTH_SHORT).show();
+        }
     }
 
     public void openAccessibilitySettings() {
