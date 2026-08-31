@@ -5,6 +5,7 @@ import android.accessibilityservice.AccessibilityServiceInfo;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.text.InputType;
 import android.text.format.DateFormat;
 import android.util.Log;
 import android.view.accessibility.AccessibilityEvent;
@@ -330,6 +331,23 @@ public class QQAccessibilityService extends AccessibilityService {
             inp.recycle();
             root.recycle();
             this.processing = false;
+            return;
+        }
+        // 关键修复：支付/转账金额框、验证码框、手机号框一律是数字/电话类inputType。
+        // 之前没有区分输入框类型，导致在这些框里也会触发断句追加/替换规则
+        // （比如金额"1"后面被自动加上"喵"变成"1喵"，无法提交支付）。
+        // 这里直接按inputType过滤，不影响普通聊天输入框（那些是TYPE_CLASS_TEXT）。
+        int inputType = inp.getInputType();
+        boolean isNumberField = (inputType & InputType.TYPE_CLASS_NUMBER) != 0
+                || (inputType & InputType.TYPE_CLASS_PHONE) != 0;
+        if (isNumberField) {
+            appendLog("[诊断] pkg=" + this.trackedPkg + " 输入框是数字/电话类型(inputType=" + inputType
+                    + ")，跳过改写，避免影响支付/转账/验证码");
+            inp.recycle();
+            root.recycle();
+            this.processing = false;
+            this.userOriginal = "";
+            this.lastSet = "";
             return;
         }
         CharSequence cs = inp.getText();
