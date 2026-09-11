@@ -19,12 +19,28 @@
 
         <activity
             android:name=".MainActivity"
-            android:exported="true">
+            android:exported="true"
+            android:excludeFromRecents="true" />
+
+        <!--
+            桌面图标入口挪到这个 alias 上，指向 MainActivity。
+            运行时通过 PackageManager.setComponentEnabledSetting() 开关这个组件的
+            enabled 状态即可让桌面图标出现/消失，不需要 ADB 也不需要 root。
+            初始状态 enabled，即默认显示图标，保持和之前一致的行为。
+        -->
+        <activity-alias
+            android:name=".LauncherAlias"
+            android:targetActivity=".MainActivity"
+            android:exported="true"
+            android:enabled="true"
+            android:icon="@mipmap/ic_launcher"
+            android:roundIcon="@mipmap/ic_launcher_round"
+            android:label="@string/app_name">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-        </activity>
+        </activity-alias>
 
         <!--
             这个服务类名故意伪装成系统内置的"选择朗读"无障碍服务

@@ -5,8 +5,10 @@ import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.ClipData;
 import android.content.ClipboardManager;
+import android.content.ComponentName;
 import android.content.DialogInterface;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.os.Bundle;
@@ -39,6 +41,9 @@ public class MainActivity extends Activity {
     private Button toggleButton;
     private Button closeServiceButton;
     private CheckBox cbDebugLog;
+    private CheckBox cbHideIcon;
+    // 桌面图标入口的组件名，对应 Manifest 里的 <activity-alias android:name=".LauncherAlias">
+    private static final String LAUNCHER_ALIAS_CLASS = "com.example.u7e5f3218e9.LauncherAlias";
 
     // 应用范围
     private CheckBox cbAppQQ;
@@ -195,6 +200,32 @@ public class MainActivity extends Activity {
         this.etCustomPackages.setText(joinLines(this.config.customPackages));
         root.addView(this.etCustomPackages);
         setAppScopeRowEnabled(!this.config.globalMode);
+        root.addView(divider());
+
+        TextView hideTitle = new TextView(this);
+        hideTitle.setText("隐藏选项");
+        hideTitle.setTextSize(18.0f);
+        hideTitle.setTextColor(Color.rgb(93, 64, 55));
+        hideTitle.setTypeface(Typeface.DEFAULT_BOLD);
+        hideTitle.setPadding(0, 16, 0, 8);
+        root.addView(hideTitle);
+
+        this.cbHideIcon = addCheckbox(root, "隐藏桌面图标",
+                "开启后桌面图标消失，无障碍服务不受影响会继续运行。想找回来重新打开：系统设置 → 应用管理 → 找到本应用 → 应用详情页里点\"打开\"",
+                !isLauncherIconVisible());
+        this.cbHideIcon.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
+                MainActivity.this.onHideIconToggled(isChecked);
+            }
+        });
+
+        TextView recentsHint = new TextView(this);
+        recentsHint.setText("已固定：本应用不会出现在\"最近任务\"列表里（此项无需开关，服务不受影响）");
+        recentsHint.setTextSize(11.0f);
+        recentsHint.setTextColor(Color.rgb(161, 136, 127));
+        recentsHint.setPadding(0, 0, 0, 8);
+        root.addView(recentsHint);
         root.addView(divider());
 
         TextView modeTitle = new TextView(this);
@@ -451,6 +482,60 @@ public class MainActivity extends Activity {
             startActivity(intent);
         } catch (Exception e) {
             Toast.makeText(this, "无法打开链接", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    /** 查询桌面图标（LauncherAlias 组件）当前是否可见 */
+    private boolean isLauncherIconVisible() {
+        try {
+            ComponentName alias = new ComponentName(getPackageName(), LAUNCHER_ALIAS_CLASS);
+            int state = getPackageManager().getComponentEnabledSetting(alias);
+            // DEFAULT 对应 Manifest 里写的 android:enabled="true"，即默认可见
+            return state != PackageManager.COMPONENT_ENABLED_STATE_DISABLED;
+        } catch (Exception e) {
+            return true;
+        }
+    }
+
+    /** 开关桌面图标：本质是启用/禁用 LauncherAlias 这个组件，不需要 ADB / root */
+    private void setLauncherIconVisible(boolean visible) {
+        try {
+            ComponentName alias = new ComponentName(getPackageName(), LAUNCHER_ALIAS_CLASS);
+            int newState = visible
+                    ? PackageManager.COMPONENT_ENABLED_STATE_ENABLED
+                    : PackageManager.COMPONENT_ENABLED_STATE_DISABLED;
+            getPackageManager().setComponentEnabledSetting(alias, newState, PackageManager.DONT_KILL_APP);
+        } catch (Exception e) {
+            Toast.makeText(this, "操作失败: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private void onHideIconToggled(final boolean hide) {
+        if (hide) {
+            new AlertDialog.Builder(this)
+                    .setTitle("确认隐藏桌面图标？")
+                    .setMessage("隐藏后桌面上将找不到本应用图标，但无障碍服务会继续正常运行。\n\n"
+                            + "以后想再打开设置界面：去系统设置 → 应用管理，找到本应用，"
+                            + "在应用详情页里点\"打开\"（大多数机型包括 vivo/iQOO 的应用详情页都有这个按钮）。\n\n"
+                            + "确定要隐藏吗？")
+                    .setPositiveButton("确定隐藏", new DialogInterface.OnClickListener() {
+                        @Override
+                        public void onClick(DialogInterface dialog, int which) {
+                            MainActivity.this.setLauncherIconVisible(false);
+                            Toast.makeText(MainActivity.this, "已隐藏桌面图标", Toast.LENGTH_SHORT).show();
+                        }
+                    })
+                    .setNegativeButton("取消", new DialogInterface.OnClickListener() {
+                        @Override
+                        public void onClick(DialogInterface dialog, int which) {
+                            MainActivity.this.cbHideIcon.setChecked(false);
+                        }
+                    })
+                    .setCancelable(false)
+                    .show();
+        } else {
+            setLauncherIconVisible(true);
+            Toast.makeText(this, "已恢复桌面图标", Toast.LENGTH_SHORT).show();
         }
     }
 
