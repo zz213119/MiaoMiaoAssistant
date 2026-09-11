@@ -45,6 +45,7 @@ public class MainActivity extends Activity {
     private Button closeServiceButton;
     private CheckBox cbDebugLog;
     private CheckBox cbHideIcon;
+    private CheckBox cbAggressiveHideRecents;
     // 桌面图标入口的组件名，对应 Manifest 里的 <activity-alias android:name=".LauncherAlias">
     private static final String LAUNCHER_ALIAS_CLASS = "com.example.u7e5f3218e9.LauncherAlias";
 
@@ -56,6 +57,20 @@ public class MainActivity extends Activity {
     private CheckBox cbGlobalMode;
     private EditText etCustomPackages;
     private LinearLayout appCheckRow;
+
+    /**
+     * 用户按 Home 键 / 切到其他应用时触发（不含来电、通知栏下拉等系统打断）。
+     * 开启"强力隐藏最近任务"时，主动把这次任务从最近任务列表里摘掉，
+     * 比静态的 android:excludeFromRecents 更硬、兼容性更好。
+     * 只影响这个 Activity 实例本身，无障碍服务是独立组件，不受影响，继续在后台跑。
+     */
+    @Override
+    protected void onUserLeaveHint() {
+        super.onUserLeaveHint();
+        if (this.config != null && this.config.aggressiveHideRecents) {
+            finishAndRemoveTask();
+        }
+    }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -223,12 +238,18 @@ public class MainActivity extends Activity {
             }
         });
 
-        TextView recentsHint = new TextView(this);
-        recentsHint.setText("已固定：本应用不会出现在\"最近任务\"列表里（此项无需开关，服务不受影响）");
-        recentsHint.setTextSize(11.0f);
-        recentsHint.setTextColor(Color.rgb(161, 136, 127));
-        recentsHint.setPadding(0, 0, 0, 8);
-        root.addView(recentsHint);
+        this.cbAggressiveHideRecents = addCheckbox(root, "强力隐藏最近任务（切后台自动清任务记录）",
+                "开启后每次切到后台都会主动清掉这个界面在最近任务里的记录，"
+                        + "比系统的\"excludeFromRecents\"更强、兼容性更好，适合本机 excludeFromRecents 不生效的情况。"
+                        + "代价：无法\"秒回\"到刚才那个页面，下次都相当于重新打开。无障碍服务不受影响，一直在后台跑。",
+                this.config.aggressiveHideRecents);
+        this.cbAggressiveHideRecents.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
+                MainActivity.this.config.aggressiveHideRecents = isChecked;
+                MainActivity.this.config.save(MainActivity.this);
+            }
+        });
 
         TextView batteryHint = new TextView(this);
         batteryHint.setText("重要：图标/最近任务只是\"看不看得见\"，不代表系统不会清理后台。"

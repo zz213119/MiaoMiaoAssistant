@@ -26,6 +26,9 @@ public class CatConfig {
     public static final String KEY_GLOBAL_MODE = "global_mode";
     public static final String KEY_ENABLE_DEBUG_LOG = "enable_debug_log";
     public static final String KEY_CUSTOM_PACKAGES = "custom_packages";
+    // 切到后台时是否主动调用 finishAndRemoveTask() 强制清除最近任务记录，
+    // 比静态的 excludeFromRecents 更强，但代价是每次都相当于"全新打开"，不能恢复到上次的页面
+    public static final String KEY_AGGRESSIVE_HIDE_RECENTS = "aggressive_hide_recents";
 
     public static final String PKG_QQ = "com.tencent.mobileqq";
     public static final String PKG_QQ_I = "com.tencent.mobileqqi";
@@ -67,6 +70,9 @@ public class CatConfig {
     // 关闭后能省一点点性能开销，也避免日志缓冲区被高频诊断信息挤满。
     public boolean enableDebugLog = false;
     public String[] customPackages = new String[0];
+    // 默认关闭：开启后每次切后台都会清掉任务记录，无法"秒回"到上次页面，
+    // 是否要这种更强力的隐藏效果交给用户自己决定
+    public boolean aggressiveHideRecents = false;
 
     /**
      * 判断某个包名当前是否处于处理范围内。
@@ -158,6 +164,7 @@ public class CatConfig {
         cfg.enableKuaishou = sp.getBoolean(KEY_APP_KUAISHOU, false);
         cfg.globalMode = sp.getBoolean(KEY_GLOBAL_MODE, false);
         cfg.enableDebugLog = sp.getBoolean(KEY_ENABLE_DEBUG_LOG, false);
+        cfg.aggressiveHideRecents = sp.getBoolean(KEY_AGGRESSIVE_HIDE_RECENTS, false);
         String customPkgStr = sp.getString(KEY_CUSTOM_PACKAGES, "");
         if (customPkgStr != null && !customPkgStr.trim().isEmpty()) {
             List<String> pkgList = new ArrayList<>();
@@ -215,6 +222,7 @@ public class CatConfig {
         ed.putBoolean(KEY_APP_KUAISHOU, this.enableKuaishou);
         ed.putBoolean(KEY_GLOBAL_MODE, this.globalMode);
         ed.putBoolean(KEY_ENABLE_DEBUG_LOG, this.enableDebugLog);
+        ed.putBoolean(KEY_AGGRESSIVE_HIDE_RECENTS, this.aggressiveHideRecents);
         ed.putString(KEY_CUSTOM_PACKAGES, join(this.customPackages, "\n"));
         ed.apply();
     }
