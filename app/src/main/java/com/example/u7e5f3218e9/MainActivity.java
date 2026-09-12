@@ -20,6 +20,8 @@ import android.graphics.drawable.Drawable;
 import android.graphics.drawable.Icon;
 import android.net.Uri;
 import android.os.Build;
+import android.os.Handler;
+import android.os.Looper;
 import android.os.PowerManager;
 import android.provider.Settings;
 import android.util.Log;
@@ -255,6 +257,29 @@ public class MainActivity extends Activity {
                 MainActivity.this.onHideIconToggled(isChecked);
             }
         });
+
+        Button forceRefreshButton = new Button(this);
+        forceRefreshButton.setText("桌面图标没消失？试试实验性强制刷新");
+        forceRefreshButton.setTextSize(13.0f);
+        LinearLayout.LayoutParams refreshBtnLp = new LinearLayout.LayoutParams(-1, -2);
+        refreshBtnLp.setMargins(0, 4, 0, 4);
+        forceRefreshButton.setLayoutParams(refreshBtnLp);
+        forceRefreshButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                MainActivity.this.experimentalForceRefreshLauncher();
+            }
+        });
+        root.addView(forceRefreshButton);
+        TextView refreshHint = new TextView(this);
+        refreshHint.setText("实验性功能：仅在勾了\"隐藏桌面图标\"之后，图标却仍然赖在桌面上时使用。"
+                + "原理是短时间内连续切换组件状态，人为制造多次系统变更事件，"
+                + "赌一下能不能逼着桌面重新扫描。过程中图标可能会闪烁/短暂重新出现，不保证一定有效，"
+                + "无副作用（不会影响无障碍服务），试了没用就当没试过。");
+        refreshHint.setTextSize(11.0f);
+        refreshHint.setTextColor(Color.rgb(161, 136, 127));
+        refreshHint.setPadding(0, 0, 0, 8);
+        root.addView(refreshHint);
 
         this.cbAggressiveHideRecents = addCheckbox(root, "强力隐藏最近任务（切后台自动清任务记录）",
                 "开启后每次切到后台都会主动清掉这个界面在最近任务里的记录，"
@@ -903,6 +928,49 @@ public class MainActivity extends Activity {
                     + "重启一次桌面或手机通常能解决，不是设置没生效";
         }
         return null; // 两层都对得上，一切正常
+    }
+
+    /**
+     * 实验性：短时间内连续切换 LauncherAlias 的启用状态（禁用→启用→禁用），
+     * 人为制造多次组件变更事件，赌一下能不能逼着桌面重新扫描、清掉残留图标。
+     * 只在"已经勾选隐藏、但图标仍然赖在桌面上"这种场景下有意义使用；
+     * 不保证一定有效，纯粹是对付厂商定制桌面缓存问题的一次性尝试，不影响无障碍服务本身。
+     */
+    private void experimentalForceRefreshLauncher() {
+        if (isLauncherIconVisible()) {
+            Toast.makeText(this, "当前图标本来就是显示状态，请先勾选\"隐藏桌面图标\"再来试这个", Toast.LENGTH_LONG).show();
+            return;
+        }
+        Toast.makeText(this, "开始尝试强制刷新，过程中图标可能会闪烁几下…", Toast.LENGTH_SHORT).show();
+        final Handler handler = new Handler(Looper.getMainLooper());
+        final int delayMs = 300;
+        // 禁用 → 启用 → 禁用 → 启用 → 禁用，制造多组变更事件，最终停在"隐藏"状态
+        setLauncherIconVisible(true);
+        handler.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                MainActivity.this.setLauncherIconVisible(false);
+                handler.postDelayed(new Runnable() {
+                    @Override
+                    public void run() {
+                        MainActivity.this.setLauncherIconVisible(true);
+                        handler.postDelayed(new Runnable() {
+                            @Override
+                            public void run() {
+                                MainActivity.this.setLauncherIconVisible(false);
+                                String problem = MainActivity.this.verifyLauncherIconState(false);
+                                if (problem == null) {
+                                    Toast.makeText(MainActivity.this,
+                                            "刷新尝试完成，回桌面看看图标是否消失了", Toast.LENGTH_LONG).show();
+                                } else {
+                                    Toast.makeText(MainActivity.this, problem, Toast.LENGTH_LONG).show();
+                                }
+                            }
+                        }, delayMs);
+                    }
+                }, delayMs);
+            }
+        }, delayMs);
     }
 
     private void onHideIconToggled(final boolean hide) {
