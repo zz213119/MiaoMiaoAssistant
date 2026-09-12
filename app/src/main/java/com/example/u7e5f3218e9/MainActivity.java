@@ -841,17 +841,68 @@ public class MainActivity extends Activity {
         }
     }
 
-    /** 开关桌面图标：本质是启用/禁用 LauncherAlias 这个组件，不需要 ADB / root */
+    /** 开关桌面图标：本质是启用/禁用 LauncherAlias 这个组件，不需要 ADB / root。
+     * 加了 SYNCHRONOUS 标志（Android 11 / API 30+ 官方公开常量，不是隐藏 API），
+     * 让 PackageManager 把这次状态变更同步写盘完成后再返回，减少"状态改了但还没落地"的窗口期。
+     */
     private void setLauncherIconVisible(boolean visible) {
         try {
             ComponentName alias = new ComponentName(getPackageName(), LAUNCHER_ALIAS_CLASS);
             int newState = visible
                     ? PackageManager.COMPONENT_ENABLED_STATE_ENABLED
                     : PackageManager.COMPONENT_ENABLED_STATE_DISABLED;
-            getPackageManager().setComponentEnabledSetting(alias, newState, PackageManager.DONT_KILL_APP);
+            int flags = PackageManager.DONT_KILL_APP;
+            if (Build.VERSION.SDK_INT >= 30) {
+                flags |= PackageManager.SYNCHRONOUS;
+            }
+            getPackageManager().setComponentEnabledSetting(alias, newState, flags);
         } catch (Exception e) {
             Toast.makeText(this, "操作失败: " + e.getMessage(), Toast.LENGTH_SHORT).show();
         }
+    }
+
+    /**
+     * 隐藏/恢复操作之后的双重校验，用来区分两种情况：
+     * A. PackageManager 层面根本没改成功（代码/权限问题）
+     * B. PackageManager 已经改成功，但桌面（Launcher）自己没刷新缓存（厂商定制系统的显示滞后）
+     * 分清楚这两种，才知道该改代码还是该让用户去重启桌面/手机。
+     */
+    private String verifyLauncherIconState(boolean expectVisible) {
+        ComponentName alias = new ComponentName(getPackageName(), LAUNCHER_ALIAS_CLASS);
+        PackageManager pm = getPackageManager();
+        int state = pm.getComponentEnabledSetting(alias);
+        boolean pmSaysVisible = state != PackageManager.COMPONENT_ENABLED_STATE_DISABLED;
+
+        boolean foundInLauncherQuery = false;
+        try {
+            Intent launcherIntent = new Intent(Intent.ACTION_MAIN);
+            launcherIntent.addCategory(Intent.CATEGORY_LAUNCHER);
+            List<ResolveInfo> resolveInfos = pm.queryIntentActivities(launcherIntent, 0);
+            for (ResolveInfo ri : resolveInfos) {
+                if (ri.activityInfo != null
+                        && getPackageName().equals(ri.activityInfo.packageName)
+                        && LAUNCHER_ALIAS_CLASS.equals(ri.activityInfo.name)) {
+                    foundInLauncherQuery = true;
+                    break;
+                }
+            }
+        } catch (Exception e) {
+            Log.e("MainActivity", "查询 MAIN/LAUNCHER 结果失败", e);
+        }
+
+        Log.i("MainActivity", "隐藏图标校验: PackageManager状态=" + (pmSaysVisible ? "可见" : "已禁用")
+                + ", MAIN/LAUNCHER查询中" + (foundInLauncherQuery ? "能找到" : "找不到") + " LauncherAlias");
+
+        if (pmSaysVisible != expectVisible) {
+            // A 类问题：连 PackageManager 自己的状态都没改对，是代码/权限层面的问题
+            return "组件状态设置失败（PackageManager 没有生效），不是桌面缓存问题，需要检查权限或代码";
+        }
+        if (foundInLauncherQuery != expectVisible) {
+            // B 类问题：系统层面已经改对了，只是这台设备的桌面自己没跟着刷新
+            return "系统组件状态已经改对了，但当前桌面的图标缓存没跟着刷新（厂商定制系统常见），"
+                    + "重启一次桌面或手机通常能解决，不是设置没生效";
+        }
+        return null; // 两层都对得上，一切正常
     }
 
     private void onHideIconToggled(final boolean hide) {
@@ -866,7 +917,12 @@ public class MainActivity extends Activity {
                         @Override
                         public void onClick(DialogInterface dialog, int which) {
                             MainActivity.this.setLauncherIconVisible(false);
-                            Toast.makeText(MainActivity.this, "已隐藏桌面图标", Toast.LENGTH_SHORT).show();
+                            String problem = MainActivity.this.verifyLauncherIconState(false);
+                            if (problem == null) {
+                                Toast.makeText(MainActivity.this, "已隐藏桌面图标", Toast.LENGTH_SHORT).show();
+                            } else {
+                                Toast.makeText(MainActivity.this, problem, Toast.LENGTH_LONG).show();
+                            }
                         }
                     })
                     .setNegativeButton("取消", new DialogInterface.OnClickListener() {
@@ -879,7 +935,12 @@ public class MainActivity extends Activity {
                     .show();
         } else {
             setLauncherIconVisible(true);
-            Toast.makeText(this, "已恢复桌面图标", Toast.LENGTH_SHORT).show();
+            String problem = verifyLauncherIconState(true);
+            if (problem == null) {
+                Toast.makeText(this, "已恢复桌面图标", Toast.LENGTH_SHORT).show();
+            } else {
+                Toast.makeText(this, problem, Toast.LENGTH_LONG).show();
+            }
         }
     }
 
