@@ -12,6 +12,17 @@
     <!-- 用于弹出"忽略电池优化"的系统标准授权框，避免后台被省电策略杀掉 -->
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
+    <!--
+        Android 11+ 默认限制应用互相查询，声明这个才能读到"已安装应用列表"用于伪装图标选择，
+        不是危险权限，不需要用户手动同意。
+    -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+    </queries>
+
     <application
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"

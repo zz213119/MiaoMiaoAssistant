@@ -8,10 +8,28 @@ import android.content.ClipboardManager;
 import android.content.ComponentName;
 import android.content.DialogInterface;
 import android.content.Intent;
+import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
+import android.content.pm.ResolveInfo;
+import android.content.pm.ShortcutInfo;
+import android.content.pm.ShortcutManager;
+import android.graphics.Bitmap;
+import android.graphics.Canvas;
+import android.graphics.drawable.BitmapDrawable;
+import android.graphics.drawable.Drawable;
+import android.graphics.drawable.Icon;
 import android.net.Uri;
+import android.os.Build;
 import android.os.PowerManager;
 import android.provider.Settings;
+import android.util.Log;
+import android.view.LayoutInflater;
+import android.widget.AdapterView;
+import android.widget.BaseAdapter;
+import android.widget.ImageView;
+import android.widget.ListView;
+import java.util.Collections;
+import java.util.Comparator;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.os.Bundle;
@@ -294,6 +312,38 @@ public class MainActivity extends Activity {
         vivoHint.setTextColor(Color.rgb(161, 136, 127));
         vivoHint.setPadding(0, 0, 0, 8);
         root.addView(vivoHint);
+        root.addView(divider());
+
+        TextView disguiseTitle = new TextView(this);
+        disguiseTitle.setText("伪装应用");
+        disguiseTitle.setTextSize(18.0f);
+        disguiseTitle.setTextColor(Color.rgb(93, 64, 55));
+        disguiseTitle.setTypeface(Typeface.DEFAULT_BOLD);
+        disguiseTitle.setPadding(0, 16, 0, 8);
+        root.addView(disguiseTitle);
+
+        TextView disguiseHint = new TextView(this);
+        disguiseHint.setText("从已安装应用里选一个，会在桌面生成一个图标和名字都跟它一样的快捷方式，点开实际打开的还是本应用。"
+                + "注意：只是桌面这一层伪装，系统设置→应用管理里看到的还是本应用真实名字，做不到更深层的伪装。"
+                + "生成时系统会弹一次\"是否添加到主屏幕\"的确认框，这是系统强制的，没法跳过。");
+        disguiseHint.setTextSize(11.0f);
+        disguiseHint.setTextColor(Color.rgb(161, 136, 127));
+        disguiseHint.setPadding(0, 0, 0, 8);
+        root.addView(disguiseHint);
+
+        Button disguiseButton = new Button(this);
+        disguiseButton.setText("选择要伪装的应用");
+        disguiseButton.setTextSize(14.0f);
+        LinearLayout.LayoutParams disguiseBtnLp = new LinearLayout.LayoutParams(-1, -2);
+        disguiseBtnLp.setMargins(0, 4, 0, 8);
+        disguiseButton.setLayoutParams(disguiseBtnLp);
+        disguiseButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                MainActivity.this.showDisguiseAppPicker();
+            }
+        });
+        root.addView(disguiseButton);
         root.addView(divider());
 
         TextView modeTitle = new TextView(this);
@@ -607,6 +657,175 @@ public class MainActivity extends Activity {
             Toast.makeText(this, "没找到专用入口，已跳转到应用详情页，自己找一下权限管理", Toast.LENGTH_LONG).show();
         } catch (Exception e) {
             Toast.makeText(this, "跳转失败: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    /** 一个"可伪装目标"条目：应用名 + 包名 + 图标，用于选择列表展示 */
+    private static class AppEntry {
+        final String label;
+        final String pkg;
+        final Drawable icon;
+
+        AppEntry(String label, String pkg, Drawable icon) {
+            this.label = label;
+            this.pkg = pkg;
+            this.icon = icon;
+        }
+    }
+
+    /** 查询系统里所有"能在桌面启动"的应用，排除自己，按名字排序，供伪装选择用 */
+    private List<AppEntry> queryLaunchableApps() {
+        List<AppEntry> result = new ArrayList<>();
+        try {
+            PackageManager pm = getPackageManager();
+            Intent launcherIntent = new Intent(Intent.ACTION_MAIN);
+            launcherIntent.addCategory(Intent.CATEGORY_LAUNCHER);
+            List<ResolveInfo> resolveInfos = pm.queryIntentActivities(launcherIntent, 0);
+            String selfPkg = getPackageName();
+            for (ResolveInfo ri : resolveInfos) {
+                if (ri.activityInfo == null) {
+                    continue;
+                }
+                String pkg = ri.activityInfo.packageName;
+                if (selfPkg.equals(pkg)) {
+                    continue;
+                }
+                CharSequence label = ri.loadLabel(pm);
+                Drawable icon = ri.loadIcon(pm);
+                result.add(new AppEntry(label == null ? pkg : label.toString(), pkg, icon));
+            }
+        } catch (Exception e) {
+            Log.e("MainActivity", "查询已安装应用失败", e);
+        }
+        Collections.sort(result, new Comparator<AppEntry>() {
+            @Override
+            public int compare(AppEntry a, AppEntry b) {
+                return a.label.compareToIgnoreCase(b.label);
+            }
+        });
+        return result;
+    }
+
+    /** 弹出应用选择列表（图标+名字），选中后生成对应的伪装桌面快捷方式 */
+    private void showDisguiseAppPicker() {
+        final List<AppEntry> apps = queryLaunchableApps();
+        if (apps.isEmpty()) {
+            Toast.makeText(this, "没有读到已安装应用列表", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        ListView listView = new ListView(this);
+        listView.setAdapter(new BaseAdapter() {
+            @Override
+            public int getCount() {
+                return apps.size();
+            }
+
+            @Override
+            public Object getItem(int position) {
+                return apps.get(position);
+            }
+
+            @Override
+            public long getItemId(int position) {
+                return position;
+            }
+
+            @Override
+            public View getView(int position, View convertView, ViewGroup parent) {
+                LinearLayout row;
+                ImageView iconView;
+                TextView labelView;
+                if (convertView instanceof LinearLayout && convertView.getTag() instanceof View[]) {
+                    row = (LinearLayout) convertView;
+                    View[] holder = (View[]) convertView.getTag();
+                    iconView = (ImageView) holder[0];
+                    labelView = (TextView) holder[1];
+                } else {
+                    row = new LinearLayout(MainActivity.this);
+                    row.setOrientation(LinearLayout.HORIZONTAL);
+                    int pad = 24;
+                    row.setPadding(pad, pad, pad, pad);
+                    iconView = new ImageView(MainActivity.this);
+                    LinearLayout.LayoutParams iconLp = new LinearLayout.LayoutParams(96, 96);
+                    iconLp.setMarginEnd(24);
+                    iconView.setLayoutParams(iconLp);
+                    row.addView(iconView);
+                    labelView = new TextView(MainActivity.this);
+                    labelView.setTextSize(15.0f);
+                    labelView.setGravity(android.view.Gravity.CENTER_VERTICAL);
+                    row.addView(labelView);
+                    row.setTag(new View[]{iconView, labelView});
+                }
+                AppEntry entry = apps.get(position);
+                iconView.setImageDrawable(entry.icon);
+                labelView.setText(entry.label);
+                return row;
+            }
+        });
+
+        final AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle("选择要伪装的应用")
+                .setView(listView)
+                .setNegativeButton("取消", null)
+                .create();
+        listView.setOnItemClickListener(new AdapterView.OnItemClickListener() {
+            @Override
+            public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
+                AppEntry entry = apps.get(position);
+                dialog.dismiss();
+                MainActivity.this.pinDisguiseShortcut(entry.pkg, entry.label, entry.icon);
+            }
+        });
+        dialog.show();
+    }
+
+    /** 把 Drawable 转成 Bitmap，ShortcutInfo 的图标要求 Bitmap/Icon 格式，不能直接传 Drawable */
+    private Bitmap drawableToBitmap(Drawable drawable) {
+        if (drawable instanceof BitmapDrawable && ((BitmapDrawable) drawable).getBitmap() != null) {
+            return ((BitmapDrawable) drawable).getBitmap();
+        }
+        int width = Math.max(drawable.getIntrinsicWidth(), 1);
+        int height = Math.max(drawable.getIntrinsicHeight(), 1);
+        Bitmap bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+        Canvas canvas = new Canvas(bitmap);
+        drawable.setBounds(0, 0, canvas.getWidth(), canvas.getHeight());
+        drawable.draw(canvas);
+        return bitmap;
+    }
+
+    /**
+     * 生成一个图标和名字都伪装成目标应用的桌面快捷方式，点击后实际打开本应用（走 LauncherAlias 入口）。
+     * 系统要求：这个动作必须由用户交互直接触发（不能后台静默调用），且会弹一次系统确认框，无法跳过。
+     */
+    private void pinDisguiseShortcut(String targetPkg, String label, Drawable icon) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+            Toast.makeText(this, "当前系统版本过低，不支持生成伪装快捷方式（需要 Android 8.0+）", Toast.LENGTH_LONG).show();
+            return;
+        }
+        try {
+            ShortcutManager shortcutManager = getSystemService(ShortcutManager.class);
+            if (shortcutManager == null || !shortcutManager.isRequestPinShortcutSupported()) {
+                Toast.makeText(this, "当前桌面不支持添加固定快捷方式", Toast.LENGTH_LONG).show();
+                return;
+            }
+            Intent launchIntent = new Intent(Intent.ACTION_MAIN);
+            // 故意直接指向 MainActivity 本体而不是 LauncherAlias：
+            // 如果用户同时开了"隐藏桌面图标"，LauncherAlias 会被禁用，指向它会导致伪装快捷方式也打不开。
+            // MainActivity 本体不受隐藏开关影响，一直是启用状态，两个功能互相独立、互不干扰。
+            launchIntent.setClassName(getPackageName(), getPackageName() + ".MainActivity");
+            launchIntent.addCategory(Intent.CATEGORY_LAUNCHER);
+
+            Bitmap bitmap = drawableToBitmap(icon);
+            String shortLabel = label.length() > 10 ? label.substring(0, 10) : label;
+
+            ShortcutInfo.Builder builder = new ShortcutInfo.Builder(this, "disguise_" + targetPkg)
+                    .setShortLabel(shortLabel)
+                    .setLongLabel(label)
+                    .setIcon(Icon.createWithBitmap(bitmap))
+                    .setIntent(launchIntent);
+            shortcutManager.requestPinShortcut(builder.build(), null);
+        } catch (Exception e) {
+            Toast.makeText(this, "生成伪装快捷方式失败: " + e.getMessage(), Toast.LENGTH_SHORT).show();
         }
     }
 
