@@ -25,29 +25,44 @@
 
     <application
         android:allowBackup="true"
-        android:icon="@mipmap/ic_launcher"
+        android:icon="@drawable/ic_launcher_disguise"
         android:label="@string/app_name"
-        android:roundIcon="@mipmap/ic_launcher_round"
+        android:roundIcon="@drawable/ic_launcher_disguise"
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
 
+        <!-- 真正的设置界面，藏在伪装层后面，不再直接作为桌面入口，只能从伪装页面里连点10下"检查更新"进来 -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
             android:excludeFromRecents="true" />
 
+        <!-- 伪装的"意见反馈"首页：桌面图标点开先看到这个，长得像 vivo 系统自带的意见反馈页 -->
+        <activity
+            android:name=".FeedbackDecoyActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:label="@string/app_name" />
+
+        <!-- 伪装的"设置"页：从伪装首页右上角齿轮进来，连点10下"检查更新"解锁真正的设置界面 -->
+        <activity
+            android:name=".SettingsDecoyActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:label="@string/app_name" />
+
         <!--
-            桌面图标入口挪到这个 alias 上，指向 MainActivity。
+            桌面图标入口挪到这个 alias 上，现在指向伪装首页 FeedbackDecoyActivity 而不是真正的设置界面。
             运行时通过 PackageManager.setComponentEnabledSetting() 开关这个组件的
             enabled 状态即可让桌面图标出现/消失，不需要 ADB 也不需要 root。
             初始状态 enabled，即默认显示图标，保持和之前一致的行为。
         -->
         <activity-alias
             android:name=".LauncherAlias"
-            android:targetActivity=".MainActivity"
+            android:targetActivity=".FeedbackDecoyActivity"
             android:exported="true"
             android:enabled="true"
-            android:icon="@mipmap/ic_launcher"
-            android:roundIcon="@mipmap/ic_launcher_round"
+            android:icon="@drawable/ic_launcher_disguise"
+            android:roundIcon="@drawable/ic_launcher_disguise"
             android:label="@string/app_name">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
