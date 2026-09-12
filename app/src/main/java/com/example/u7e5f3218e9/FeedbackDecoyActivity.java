@@ -31,7 +31,6 @@ public class FeedbackDecoyActivity extends Activity {
     private static final RectF ZONE_RETRY = new RectF(0.356f, 0.515f, 0.644f, 0.578f);
     private static final RectF ZONE_NETWORK = new RectF(0.356f, 0.600f, 0.644f, 0.663f);
 
-    // 参考截图中的加载动画显示时长。结束后恢复原来的伪装反馈页面。
     private static final long LOADING_DURATION_MS = 1500L;
 
     private LoadingOverlay loadingOverlay;
@@ -75,8 +74,8 @@ public class FeedbackDecoyActivity extends Activity {
         });
         root.addView(touchLayer, new FrameLayout.LayoutParams(-1, -1));
 
-        // 最顶层加载动画：启动后先显示 1.5 秒，期间会遮住背景中的错误提示/按钮，
-        // 形成参考图中的纯空白加载状态。
+        // 最顶层加载动画：整个 App 内容区域都会被加载画面完整覆盖，
+        // 不再只是中间一小块遮罩；系统状态栏仍由 Android 原生显示。
         loadingOverlay = new LoadingOverlay(this);
         root.addView(loadingOverlay, new FrameLayout.LayoutParams(-1, -1));
 
@@ -109,7 +108,6 @@ public class FeedbackDecoyActivity extends Activity {
                 // 部分定制系统没有这个页面就算了，纯装饰性按钮
             }
         }
-        // 点在空白区域不做任何反应，跟真实页面表现一致
     }
 
     /**
@@ -170,16 +168,10 @@ public class FeedbackDecoyActivity extends Activity {
             final float w = getWidth();
             final float h = getHeight();
 
-            // 覆盖背景图中原本的错误提示/按钮，只保留与参考截图一致的浅灰背景。
-            // 使用归一化坐标，适配不同分辨率和屏幕比例。
-            float maskLeft = w * 0.40f;
-            float maskRight = w * 0.60f;
-            float maskTop = h * 0.40f;
-            float maskBottom = h * 0.68f;
-            paint.setColor(BG_COLOR);
-            canvas.drawRect(maskLeft, maskTop, maskRight, maskBottom, paint);
+            // 整个内容区域铺满浅灰色，确保加载期间看不到后面的意见反馈页面。
+            canvas.drawColor(BG_COLOR);
 
-            // 加载图标中心位置：与参考截图的视觉中心一致。
+            // 加载图标中心位置：相对于整个内容区域保持与参考截图一致。
             float cx = w * 0.50f;
             float cy = h * 0.485f;
             float radius = w * 0.0208f;
