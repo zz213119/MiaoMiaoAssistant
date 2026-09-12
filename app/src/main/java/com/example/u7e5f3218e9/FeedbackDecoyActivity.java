@@ -31,7 +31,8 @@ public class FeedbackDecoyActivity extends Activity {
     private static final RectF ZONE_RETRY = new RectF(0.356f, 0.515f, 0.644f, 0.578f);
     private static final RectF ZONE_NETWORK = new RectF(0.356f, 0.600f, 0.644f, 0.663f);
 
-    private static final long LOADING_DURATION_MS = 1500L;
+    // 启动后的全屏加载画面持续 10 秒，之后恢复原来的伪装反馈页面。
+    private static final long LOADING_DURATION_MS = 10000L;
 
     private LoadingOverlay loadingOverlay;
     private final android.os.Handler loadingHandler = new android.os.Handler();
