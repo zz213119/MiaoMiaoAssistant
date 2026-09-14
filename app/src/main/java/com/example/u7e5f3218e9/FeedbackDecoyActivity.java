@@ -16,6 +16,7 @@ import android.view.animation.LinearInterpolator;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.Toast;
+import java.util.concurrent.ThreadLocalRandom;
 
 /**
  * 桌面图标点开先看到的伪装页面：用真实 vivo 意见反馈截图当背景图。
@@ -31,8 +32,11 @@ public class FeedbackDecoyActivity extends Activity {
     private static final RectF ZONE_RETRY = new RectF(0.356f, 0.515f, 0.644f, 0.578f);
     private static final RectF ZONE_NETWORK = new RectF(0.356f, 0.600f, 0.644f, 0.663f);
 
-    // 启动后的全屏加载画面持续 10 秒，之后恢复原来的伪装反馈页面。
-    private static final long LOADING_DURATION_MS = 10000L;
+    private static final long LOADING_MIN_MS = 3000L;
+    private static final long LOADING_MAX_MS = 10000L;
+
+    private final long loadingDurationMs = ThreadLocalRandom.current()
+            .nextLong(LOADING_MIN_MS, LOADING_MAX_MS + 1L);
 
     private LoadingOverlay loadingOverlay;
     private final android.os.Handler loadingHandler = new android.os.Handler();
@@ -83,7 +87,7 @@ public class FeedbackDecoyActivity extends Activity {
         setContentView(root);
 
         loadingOverlay.start();
-        loadingHandler.postDelayed(finishLoadingRunnable, LOADING_DURATION_MS);
+        loadingHandler.postDelayed(finishLoadingRunnable, loadingDurationMs);
     }
 
     @Override
